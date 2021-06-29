@@ -44,6 +44,8 @@ contract xvUSDT is ERC20 {
   uint256 public MAX_BPS = 100;
   uint256 public depositLimit;
 
+  mapping (address => StrategyParams) strategies;
+
   constructor(
     address _token,
     address _governance,
@@ -150,5 +152,47 @@ contract xvUSDT is ERC20 {
     token.safeTransfer(msg.sender, r);
   }
 
+  function addStrategy(address _strategy, uint256 _debtRatio, uint256 _rateLimit, uint256 _performanceFee) public {
+    require(_strategy != address(0), "strategy address can't be zero");
+    require(msg.sender == governance, "caller must be governance");
+    require(performanceFee <= MAX_BPS, "performance fee should be smaller than ...");
+
+    strategies[_strategy] = StrategyParams({
+      performanceFee: _performanceFee,
+      activation: block.timestamp,
+      debtRatio: _debtRatio,
+      rateLimit: _rateLimit,
+      lastReport: block.timestamp,
+      totalDebt: 0,
+      totalGain: 0,
+      totalLoss: 0
+    });
+
+    emit StrategyAdded(_strategy, _debtRatio, _rateLimit, _performanceFee);
+
+  }
+
+  function revokeStrategy(address _strategy) public {
+    require(msg.sender == strategy || msg.sender == governance || msg.sender == guardian, "should be one of 3 admins");
+    _revokeStrategy(_strategy);
+  }
+
+  function _revokeStrategy(address _strategy) internal {
+    strategies[_strategy].debtRatio = 0;
+    emit StrategyRevoked(strategy);
+  }
+
+  function expectedReturn(address _strategy) external returns (uint256) {
+    _expectedReturn(_strategy);
+  }
+
+  function _expectedReturn(address _strategy) internal returns (uint256) {
+    uint256 delta = block.timestamp - strategies[_strategy].lastReport;
+    if (delta > 0) {
+      return strategies[_strategy].totalGain.mul(delta).div(block.timestamp - strategies[_strategy].activation);
+    } else {
+      return 0;
+    }
+  }
 
 }
