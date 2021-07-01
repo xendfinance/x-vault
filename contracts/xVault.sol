@@ -24,6 +24,7 @@ contract xvUSDT is ERC20 {
   
   address public guardian;
   address public governance;
+  address public management;
   ERC20 public token;
 
   GuestList guestList;
@@ -42,14 +43,27 @@ contract xvUSDT is ERC20 {
   uint256 public min = 9500;
   uint256 public constant max = 10000;
   uint256 public MAX_BPS = 100;
-  uint256 public depositLimit;
 
-  mapping (address => StrategyParams) strategies;
+  mapping (address => StrategyParams) public strategies;
+  uint256 MAXIMUM_STRATEGIES = 20;
+  address[] public withdrawalQueue;
+
+  bool public emergencyShutdown;
+  
+  uint256 public depositLimit;
+  uint256 public debtRatio;
+  uint256 public totalDebt;
+  uint256 public lastReport;
+  uint256 public activation;
+
+  address public treasury;    // reward contract where governance fees are sent to
+  uint256 public managementFee;
+  uint256 public performanceFee;
 
   constructor(
     address _token,
     address _governance,
-    address _rewards,
+    address _treasury,
     string memory _nameOverride,
     string memory _symbolOverride
   ) 
@@ -57,10 +71,41 @@ contract xvUSDT is ERC20 {
     string(abi.encodePacked("xend ", ERC20(_token).name())),
     string(abi.encodePacked("xv", ERC20(_token).name()))
   ){
+
     token = ERC20(_token);
     guardian = msg.sender;
     governance = _governance;
+    management = _governance;
+    treasury = _treasury;
+
+    performanceFee = 1000;        // 10% of yield
+    managementFee = 200;          // 2% per year
+    lastReport = block.timestamp;
+    activation = block.timestamp;
+
     _setupDecimals(ERC20(_token).decimals());
+  }
+
+  function setName(string memory _name) external {
+    require(msg.sender == governance, "!governance");
+    name = _name;
+  }
+
+  function setSymbol(string memory _symbol) external {
+    require(msg.sender == governance, "!governance");
+    symbol = _symbol;
+  }
+
+  function setTreasury(address _treasury) external {
+    require(msg.sender == governance, "!governance");
+    treasury = _treasury;
+    emit UpdateTreasury(_treasury);
+  }
+
+  function setGuardian(address _guardian) external {
+    require(msg.sender == governance || msg.sender == guardian, "caller must be governance or guardian");
+    guardian = _guardian;
+    emit UpdateGuardian(_guardian);
   }
 
   function balance() public view returns (uint256) {
@@ -103,6 +148,27 @@ contract xvUSDT is ERC20 {
     managementFee = fee;
     emit UpdateManangementFee(fee);
   }
+
+  function setEmergencyShutdown(bool active) external {
+    /***
+      Activates or deactivates vault
+
+      During Emergency Shutdown, 
+      1. User can't deposit into the vault but can withdraw
+      2. can't add new strategy
+      3. only governance can undo Emergency Shutdown
+    */
+
+    if (active) {
+      require(msg.sender == guardian || msg.sender == governance, "caller must be guardian or governance");
+    } else {
+      require(msg.sender == governance, "caller must be governance");
+    }
+    emergencyShutdown = active;
+    emit EmergencyShutdown(active);
+  }
+
+  
 
   function available() public view returns (uint256) {
     return token.balanceOf(address(this)).mul(min).div(max);
