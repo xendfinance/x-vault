@@ -50,15 +50,21 @@ contract xvUSDT is ERC20 {
 
   bool public emergencyShutdown;
   
-  uint256 public depositLimit;
+  uint256 public depositLimit;  // Limit of totalAssets the vault can hold
   uint256 public debtRatio;
-  uint256 public totalDebt;
-  uint256 public lastReport;
-  uint256 public activation;
+  uint256 public totalDebt;   // Amount of tokens that all strategies have borrowed
+  uint256 public lastReport;  // block.timestamp of last report
+  uint256 public activation;  // block.timestamp of contract deployment
 
   address public treasury;    // reward contract where governance fees are sent to
   uint256 public managementFee;
   uint256 public performanceFee;
+
+  event UpdateTreasury(address treasury);
+  event UpdateGuardian(address guardian);
+  event UpdateGuestList(address guestList);
+  event UpdateDepositLimit(uint256 depositLimit);
+  event UpdatePerformanceFee(uint256 fee);
 
   constructor(
     address _token,
@@ -185,22 +191,29 @@ contract xvUSDT is ERC20 {
     deposit(token.balanceOf(msg.sender), msg.sender);
   }
 
-  function deposit(uint256 _amount, address reciever) public returns (uint256) {
+  function _issueSharesForAmount(address to, uint256 amount) internal returns (uint256) {
+    uint256 shares = 0;
+    if (totalSupply > 0) {
+      shares = amount * totalSupply / _totalAssets();
+    } else {
+      shares = amount;
+    }
+
+    _mint(to, shares);
+    emit Transfer(ZERO_ADDRESS, to, shares);
+  }
+
+  function deposit(uint256 _amount) public returns (uint256) {
+    require(emergencyShutdown != true, "in status of Emergency Shutdown");
     uint256 amount = min(depositLimit - _totalAssets(), token.balanceOf(msg.sender));
+    
     require(amount > 0, "deposit amount should be bigger than zero");
 
-    uint256 _pool = balance();
-    uint256 _before = token.balanceOf(address(this));
+    uint256 shares = _issueSharesForAmount(msg.sender, amount);
+
     token.safeTransferFrom(msg.sender, address(this), _amount);
-    uint256 _after = token.balanceOf(address(this));
-    _amount = _after.sub(_before);
-    uint256 shares = 0;
-    if (totalSupply() == 0) {
-      shares = _amount;
-    } else {
-      shares = (_amount.mul(totalSupply())).div(_pool);
-    }
-    _mint(msg.sender, shares);
+    
+    return shares;
   }
 
   function harvest(address reserve, uint256 amount) external {
@@ -209,7 +222,22 @@ contract xvUSDT is ERC20 {
     ERC20(reserve).safeTransfer(governance, amount);
   }
 
-  function withdraw(uint256 _shares) public {
+  function _totalAssets() internal view returns (uint256) {
+    return token.balanceOf(address(this)) + totalDebt;
+  }
+
+  function _shareValue(uint256 _share) internal view {
+    return (_share * _totalAssets()) / totalSupply;
+  }
+
+  function withdraw(uint256 maxShare, address recipient, uint256 maxLoss) public {
+    uint256 shares = maxShare;
+    if (maxShare == 0) {
+      shares = balanceOf[msg.sender];
+    }
+    require(shares <= balanceOf[msg.sender], "share should be smaller than their own");
+    
+    uint256 value = _shareValue(shares);
     uint256 r = (balance().mul(_shares)).div(totalSupply());
     _burn(msg.sender, _shares);
 
