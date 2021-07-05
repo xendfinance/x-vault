@@ -65,6 +65,7 @@ contract xvUSDT is ERC20 {
   event UpdateGuestList(address guestList);
   event UpdateDepositLimit(uint256 depositLimit);
   event UpdatePerformanceFee(uint256 fee);
+  event StrategyRemovedFromQueue(address strategy);
 
   constructor(
     address _token,
@@ -193,8 +194,8 @@ contract xvUSDT is ERC20 {
 
   function _issueSharesForAmount(address to, uint256 amount) internal returns (uint256) {
     uint256 shares = 0;
-    if (totalSupply > 0) {
-      shares = amount * totalSupply / _totalAssets();
+    if (totalSupply() > 0) {
+      shares = amount * totalSupply() / _totalAssets();
     } else {
       shares = amount;
     }
@@ -227,10 +228,10 @@ contract xvUSDT is ERC20 {
   }
 
   function _shareValue(uint256 _share) internal view {
-    return (_share * _totalAssets()) / totalSupply;
+    return (_share * _totalAssets()) / totalSupply();
   }
 
-  function withdraw(uint256 maxShare, address recipient, uint256 maxLoss) public {
+  function withdraw(uint256 maxShare, address recipient, uint256 maxLoss) public returns (uint256) {
     uint256 shares = maxShare;
     if (maxShare == 0) {
       shares = balanceOf[msg.sender];
@@ -238,12 +239,52 @@ contract xvUSDT is ERC20 {
     require(shares <= balanceOf[msg.sender], "share should be smaller than their own");
     
     uint256 value = _shareValue(shares);
-    uint256 r = (balance().mul(_shares)).div(totalSupply());
-    _burn(msg.sender, _shares);
+    if (value > token.balanceOf(address(this))) {
+      uint256 totalLoss = 0;
+      for(uint i = 0; i < withdrawalQueue.length; i++) {
+        address strategy = withdrawalQueue[i];
+        if (strategy == address(0)) {
+          break;
+        }
+        if (value <= token.balanceOf(address(this))) {
+          break;
+        }
+
+        uint256 amountNeeded = value - token.balanceOf(address(this));
+        amountNeeded = min(amountNeeded, strategies[strategy].totalDebt);
+        if (amountNeeded == 0)
+          continue;
+        
+        uint256 before = token.balanceOf(address(this));
+        uint256 loss = Strategy(strategy).withdraw(amountNeeded);
+        uint256 withdrawn = token.balanceOf(address(this)) - before;
+
+        if (loss > 0) {
+          value = value.sub(loss);
+          totalLoss = totalLoss.add(loss);
+          strategies[strategy].totalLoss = strategies[strategy].totalLoss.add(loss);
+        }
+        strategies[strategy].totalDebt = strategies[strategy].sub(withdrawn.add(loss));
+        totalDebt = totalDebt.sub(withdrawn.add(loss));
+      }
+
+      require(totalLoss < maxLoss.mul(value.add(totalLoss))).div(MAX_BPS);
+    }
+
+    if (value > token.balanceOf(address(this))) {
+      value = token.balanceOf(address(this));
+      shares = _sharesForAmount(value);
+    }
+    
+    _burn(msg.sender, shares);
+
+    emit Transfer(msg.sender, address(0), shares);
 
     uint256 b = token.balanceOf(address(this));
     
-    token.safeTransfer(msg.sender, r);
+    token.safeTransfer(recipient, value);
+    
+    return value;
   }
 
   function addStrategy(address _strategy, uint256 _debtRatio, uint256 _rateLimit, uint256 _performanceFee) public {
@@ -262,8 +303,28 @@ contract xvUSDT is ERC20 {
       totalLoss: 0
     });
 
+    debtRatio = debtRatio.add(_debtRatio);
+    
     emit StrategyAdded(_strategy, _debtRatio, _rateLimit, _performanceFee);
 
+    require(withdrawalQueue[MAXIMUM_STRATEGIES - 1] == address(0));
+    withdrawalQueue[MAXIMUM_STRATEGIES - 1] = _strategy;
+    _organizeWithdrawalQueue();
+
+  }
+
+  function removeStrategyFromQueue(address strategy) external {
+    require(msg.sender == management || msg.sender == governance);
+    
+    for (uint i = 0; i < MAXIMUM_STRATEGIES; i++) {
+      
+      if (withdrawalQueue[i] == strategy) {
+        withdrawalQueue[i] = address(0);
+        _organizeWithdrawalQueue();
+        emit StrategyRemovedFromQueue(strategy);
+      }
+    
+    }
   }
 
   function revokeStrategy(address _strategy) public {
@@ -286,6 +347,24 @@ contract xvUSDT is ERC20 {
       return strategies[_strategy].totalGain.mul(delta).div(block.timestamp - strategies[_strategy].activation);
     } else {
       return 0;
+    }
+  }
+
+  function _organizeWithdrawalQueue() internal {
+    /* 
+      Reorganize `withdrawalQueue` to replace empty value by the later value if there is empty value between 
+      two actual value
+    */
+    uint256 offset = 0;
+    for (uint i = 0; i < MAXIMUM_STRATEGIES; i++) {
+      address strategy = withdrawalQueue[i];
+
+      if (strategy == address(0)) {
+        offset = offset + 1;
+      } else if (offset > 0) {
+        withdrawalQueue[i - offset] = strategy;
+        withdrawalQueue[i] = address(0);
+      }
     }
   }
 
