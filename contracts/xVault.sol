@@ -4,6 +4,7 @@ pragma solidity 0.6.12;
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
+import "@openzeppelin/contracts/math/SafeMath.sol";
 
 interface GuestList {
   function authorized(address guest, uint256 amount) public returns (bool);
@@ -66,6 +67,8 @@ contract xvUSDT is ERC20 {
   event UpdateDepositLimit(uint256 depositLimit);
   event UpdatePerformanceFee(uint256 fee);
   event StrategyRemovedFromQueue(address strategy);
+  event UpdateManangementFee(uint256 fee);
+  event EmergencyShutdown(bool active);
 
   constructor(
     address _token,
@@ -201,7 +204,7 @@ contract xvUSDT is ERC20 {
     }
 
     _mint(to, shares);
-    emit Transfer(ZERO_ADDRESS, to, shares);
+    emit Transfer(address(0), to, shares);
   }
 
   function deposit(uint256 _amount) public returns (uint256) {
@@ -227,11 +230,25 @@ contract xvUSDT is ERC20 {
     return token.balanceOf(address(this)) + totalDebt;
   }
 
-  function _shareValue(uint256 _share) internal view {
+  function _shareValue(uint256 _share) internal view returns (uint256) {
+    // Determine the current value of `shares`
     return (_share * _totalAssets()) / totalSupply();
   }
 
-  function withdraw(uint256 maxShare, address recipient, uint256 maxLoss) public returns (uint256) {
+  function _sharesForAmount(uint256 amount) internal view returns (uint256) {
+    // Determine how many shares `amount` of token would receive
+    if (_totalAssets() > 0) {
+      return amount.mul(totalSupply()).div(_totalAssets());
+    } else {
+      return 0;
+    }
+  }
+
+  function withdraw(
+    uint256 maxShare,
+    address recipient,
+    uint256 maxLoss     // if 1, 0.01%
+  ) public returns (uint256) {
     uint256 shares = maxShare;
     if (maxShare == 0) {
       shares = balanceOf[msg.sender];
@@ -240,7 +257,9 @@ contract xvUSDT is ERC20 {
     
     uint256 value = _shareValue(shares);
     if (value > token.balanceOf(address(this))) {
+      
       uint256 totalLoss = 0;
+      
       for(uint i = 0; i < withdrawalQueue.length; i++) {
         address strategy = withdrawalQueue[i];
         if (strategy == address(0)) {
@@ -250,7 +269,7 @@ contract xvUSDT is ERC20 {
           break;
         }
 
-        uint256 amountNeeded = value - token.balanceOf(address(this));
+        uint256 amountNeeded = value - token.balanceOf(address(this));    // recalculate the needed token amount to withdraw
         amountNeeded = min(amountNeeded, strategies[strategy].totalDebt);
         if (amountNeeded == 0)
           continue;
@@ -268,7 +287,7 @@ contract xvUSDT is ERC20 {
         totalDebt = totalDebt.sub(withdrawn.add(loss));
       }
 
-      require(totalLoss < maxLoss.mul(value.add(totalLoss))).div(MAX_BPS);
+      require(totalLoss < maxLoss.mul(value.add(totalLoss)).div(MAX_BPS), "revert if totalLoss is more than permitted");
     }
 
     if (value > token.balanceOf(address(this))) {
@@ -328,7 +347,7 @@ contract xvUSDT is ERC20 {
   }
 
   function revokeStrategy(address _strategy) public {
-    require(msg.sender == strategy || msg.sender == governance || msg.sender == guardian, "should be one of 3 admins");
+    require(msg.sender == _strategy || msg.sender == governance || msg.sender == guardian, "should be one of 3 admins");
     _revokeStrategy(_strategy);
   }
 
@@ -365,6 +384,14 @@ contract xvUSDT is ERC20 {
         withdrawalQueue[i - offset] = strategy;
         withdrawalQueue[i] = address(0);
       }
+    }
+  }
+
+  function pricePerShare() external view returns (uint256) {
+    if (totalSupply() == 0) {
+      return 10 ** decimals();      // price of 1:1
+    } else {
+      return _shareValue(10 ** decimals());
     }
   }
 
