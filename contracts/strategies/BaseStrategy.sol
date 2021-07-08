@@ -18,6 +18,8 @@ abstract contract BaseStrategy {
     return 0;
   }
 
+  VaultAPI public vault;
+  
   address public strategist;
   address public rewards;
   address public keeper;
@@ -33,8 +35,15 @@ abstract contract BaseStrategy {
 
   bool public emergencyExit;
 
+  event EmergencyExitEnabled();
+
   modifier onlyKeepers() {
-    require(msg.sender == keeper || msg.sender == strategist || msg.sender == governance(), "!authroized");
+    require(msg.sender == keeper || msg.sender == strategist || msg.sender == governance(), "!keeper & !strategist & !governance");
+    _;
+  }
+
+  modifier onlyAuthorized() {
+    require(msg.sender == strategist || msg.sender == governance(), "!strategist & !governance");
     _;
   }
 
@@ -89,7 +98,7 @@ abstract contract BaseStrategy {
 
     if (block.timestamp.sub(params.lastReport) >= maxReportDelay) return true;
 
-    uint256 outstanding = vault.debtOutStanding();
+    uint256 outstanding = vault.debtOutstanding();
     if (outstanding > debtThreshold) return true;
 
     uint256 total = estimatedTotalAssets();
@@ -101,5 +110,36 @@ abstract contract BaseStrategy {
 
     uint256 credit = vault.creditAvailable();
     return (profitFactor.mul(callCost) < credit.add(profit));
+  }
+
+  /** 
+   * @notice
+   * Harvest the strategy.
+   * This function can be called only by governance, the strategist or the keeper
+   */
+
+  function harvest() external onlyKeepers {
+    uint256 profit = 0;
+    uint256 loss = 0;
+    uint256 debtOutstanding = vault.debtOutstanding();
+    uint256 debtPayment = 0;
+
+    if (emergencyExit) {
+      uint256 totalAssets = estimatedTotalAssets();     // accurated estimate for the total amount of assets that the strategy is managing in terms of want token.
+      (debtPayment, loss) = liquidatePosition(totalAssets > debtOutstanding ? totalAssets : debtOutstanding);
+    }
+  }
+
+  /**
+   * @notice
+   * Activates emergency exit. The strategy will be rovoked and withdraw all funds to the vault on the next harvest.
+   * This may only be called by governance or the strategist.
+   */
+
+  function setEmergencyExit() external onlyAuthorized {
+    emergencyExit = true;
+    vault.revokeStrategy();
+
+    emit EmergencyExitEnabled();
   }
 }

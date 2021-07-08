@@ -31,9 +31,9 @@ contract xvUSDT is ERC20 {
   GuestList guestList;
 
   struct StrategyParams {
-    uint256 performanceFee;
-    uint256 activation;
-    uint256 debtRatio;
+    uint256 performanceFee;     // strategist's fee
+    uint256 activation;         // block.timstamp of activation of strategy
+    uint256 debtRatio;          // percentage of token amount able to deposit
     uint256 rateLimit;
     uint256 lastReport;
     uint256 totalDebt;
@@ -44,6 +44,7 @@ contract xvUSDT is ERC20 {
   uint256 public min = 9500;
   uint256 public constant max = 10000;
   uint256 public MAX_BPS = 100;
+  uint256 public SECS_PER_YEAR = 60 * 60 * 24 * 36525 / 100;
 
   mapping (address => StrategyParams) public strategies;
   uint256 MAXIMUM_STRATEGIES = 20;
@@ -205,6 +206,8 @@ contract xvUSDT is ERC20 {
 
     _mint(to, shares);
     emit Transfer(address(0), to, shares);
+
+    return shares;
   }
 
   function deposit(uint256 _amount) public returns (uint256) {
@@ -251,9 +254,9 @@ contract xvUSDT is ERC20 {
   ) public returns (uint256) {
     uint256 shares = maxShare;
     if (maxShare == 0) {
-      shares = balanceOf[msg.sender];
+      shares = balanceOf(msg.sender);
     }
-    require(shares <= balanceOf[msg.sender], "share should be smaller than their own");
+    require(shares <= balanceOf(msg.sender), "share should be smaller than their own");
     
     uint256 value = _shareValue(shares);
     if (value > token.balanceOf(address(this))) {
@@ -353,7 +356,7 @@ contract xvUSDT is ERC20 {
 
   function _revokeStrategy(address _strategy) internal {
     strategies[_strategy].debtRatio = 0;
-    emit StrategyRevoked(strategy);
+    emit StrategyRevoked(_strategy);
   }
 
   function expectedReturn(address _strategy) external returns (uint256) {
@@ -393,6 +396,66 @@ contract xvUSDT is ERC20 {
     } else {
       return _shareValue(10 ** decimals());
     }
+  }
+
+  /**
+   * @notice
+   * returns token amount to withdraw from the strategy
+   */
+  function debtOutstanding(address _strategy) external returns (uint256) {
+    return _debtOutstanding(_strategy);
+  }
+
+  function _debtOutstanding(address _strategy) internal returns (uint256) {
+    uint256 strategy_debtLimit = strategies[_strategy].debtRatio * _totalAssets() / MAX_BPS;
+    uint256 strategy_totalDebt = strategies[_strategy].totalDebt;
+
+    if (emergencyShutdown) {      // if emergency status, return current debt
+      return strategy_totalDebt;
+    } else if (strategy_totalDebt <= strategy_debtLimit) {
+      return 0;
+    } else {
+      return strategy_totalDebt - strategy_debtLimit;
+    }
+  }
+
+  function _assessFee(address _strategy, uint256 gain) internal {
+    uint256 governance_fee = _totalAssets().mul(block.timestamp.sub(lastReport)).mul(managementFee).div(MAX_BPS).div(SECS_PER_YEAR);
+    uint256 strategist_fee = 0;
+
+    if (gain > 0) {     // apply strategy fee only if there's profit. if loss or no profit, it didn't get applied
+      strategist_fee = gain.mul(strategies[_strategy].performanceFee).div(MAX_BPS);
+      governance_fee = governance_fee.add(gain.mul(performanceFee).div(MAX_BPS));
+    }
+
+    uint256 totalFee = governance_fee + strategist_fee;
+    if (totalFee > 0) {
+      uint256 reward = _issueSharesForAmount(address(this), totalFee);
+      
+    }
+  }
+
+  function _reportLoss(address _strategy, uint256 loss) internal {
+    uint256 _totalDebt = strategies[_strategy].totalDebt;
+    require(_totalDebt >= loss, "loss can't be bigger than deposited debt");
+
+    strategies[_strategy].totalLoss = strategies[_strategy].totalLoss.add(loss);
+    strategies[_strategy].totalDebt = _totalDebt.sub(loss);
+    totalDebt = totalDebt.sub(loss);
+
+    uint256 _debtRatio = strategies[_strategy].debtRatio;
+    strategies[_strategy].debtRatio = _debtRatio.sub(min(loss.mul(MAX_BPS).div(_totalAssets()), _debtRatio));     // reduce debtRatio if loss happens
+  }
+
+  function report(uint256 gain, uint256 loss, uint256 _debtPayment) external returns (uint256) {
+    require(strategies[msg.sender].activation > 0, "strategy should be active");
+    require(token.balanceOf(msg.sender) >= gain + _debtPayment, "insufficient token balance of strategy");
+
+    if (loss > 0) {
+      _reportLoss(msg.sender, loss);
+    }
+
+
   }
 
 }
