@@ -33,10 +33,10 @@ contract xvUSDT is ERC20 {
   struct StrategyParams {
     uint256 performanceFee;     // strategist's fee
     uint256 activation;         // block.timstamp of activation of strategy
-    uint256 debtRatio;          // percentage of token amount able to deposit
-    uint256 rateLimit;
+    uint256 debtRatio;          // percentage of maximum token amount of total assets that strategy can borrow from the vault
+    uint256 rateLimit;          // limit rate per unit time, it controls the amount of token strategy can borrow last harvest
     uint256 lastReport;
-    uint256 totalDebt;
+    uint256 totalDebt;          // total outstanding debt that strategy has
     uint256 totalGain;
     uint256 totalLoss;
   }
@@ -419,7 +419,10 @@ contract xvUSDT is ERC20 {
     }
   }
 
-  function _assessFee(address _strategy, uint256 gain) internal {
+  function _assessFees(address _strategy, uint256 gain) internal {
+    // issue new shares to cover fees
+    // as a result, it reduces share token price by fee amount
+
     uint256 governance_fee = _totalAssets().mul(block.timestamp.sub(lastReport)).mul(managementFee).div(MAX_BPS).div(SECS_PER_YEAR);
     uint256 strategist_fee = 0;
 
@@ -432,6 +435,13 @@ contract xvUSDT is ERC20 {
     if (totalFee > 0) {
       uint256 reward = _issueSharesForAmount(address(this), totalFee);
       
+      if (strategist_fee > 0) {
+        uint256 strategist_reward = strategist_fee.mul(reward).div(totalFee);
+        _transfer(address(this), _strategy, strategist_reward);
+      }
+      if (balanceOf(address(this)) > 0) {
+        _transfer(address(this), treasury, balanceOf(address(this)));
+      }
     }
   }
 
@@ -447,6 +457,36 @@ contract xvUSDT is ERC20 {
     strategies[_strategy].debtRatio = _debtRatio.sub(min(loss.mul(MAX_BPS).div(_totalAssets()), _debtRatio));     // reduce debtRatio if loss happens
   }
 
+  function _creditAvailable(address _strategy) internal returns (uint256) {
+    if (emergencyShutdown) {
+      return 0;
+    }
+
+    uint256 vault_totalAssets = _totalAssets();
+    uint256 vault_debtLimit = debtRatio * vault_totalAssets / MAX_BPS;
+    uint256 vault_totalDebt = totalDebt;
+
+    uint256 strategy_debtLimit = strategies[_strategy].debtRatio * vault_totalAssets / MAX_BPS;
+    uint256 strategy_totalDebt = strategies[_strategy].totalDebt;
+    uint256 strategy_rateLimit = strategies[_strategy].rateLimit;
+    uint256 strategy_lastReport = strategies[_strategy].lastReport;
+
+    if (strategy_debtLimit <= strategy_totalDebt || vault_debtLimit <= vault_totalDebt) {
+      return 0;
+    }
+
+    uint256 _available = strategy_debtLimit - strategy_totalDebt;
+    _available = min(available, vault_debtLimit - vault_totalDebt);
+
+    // if available token amount is bigger than the limit per report period, adjust it.
+    uint256 delta = block.timestamp - strategy_lastReport;      // time difference between current time and last report(i.e. harvest)
+    if (strategy_rateLimit > 0 && available >= strategy_rateLimit * delta) {
+      available = strategy_rateLimit * delta;
+    }
+
+    return min(available, token.balanceOf(address(this)));
+  }
+
   function report(uint256 gain, uint256 loss, uint256 _debtPayment) external returns (uint256) {
     require(strategies[msg.sender].activation > 0, "strategy should be active");
     require(token.balanceOf(msg.sender) >= gain + _debtPayment, "insufficient token balance of strategy");
@@ -455,6 +495,26 @@ contract xvUSDT is ERC20 {
       _reportLoss(msg.sender, loss);
     }
 
+    _assessFees(msg.sender, gain);
+
+    strategies[msg.sender].totalGain = strategies[msg.sender].add(gain);
+
+    uint256 debt = _debtOutstanding(msg.sender);
+    uint256 debtPayment = min(_debtPayment, debt);
+
+    if (debtPayment > 0) {
+      strategies[msg.sender].totalDebt = strategies[msg.sender].totalDebt.sub(debtPayment);
+      totalDebt = totalDebt.sub(debtPayment);
+      debt = debt.sub(debtPayment);
+    }
+
+    // get the available tokens to borrow from the vault
+    uint256 credit = _creditAvailable(msg.sender);
+
+    // if (credit > 0) {
+    //   strategies[msg.sender].totalDebt = strategies[msg.sender].totalDebt + credit;
+    //   totalDebt = totalDebt + credit;
+    // }
 
   }
 
