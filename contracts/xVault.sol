@@ -6,16 +6,16 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 
-interface GuestList {
-  function authorized(address guest, uint256 amount) public returns (bool);
-}
+// interface GuestList {
+//   function authorized(address guest, uint256 amount) public returns (bool);
+// }
 
 interface Strategy {
-  function want() public view returns (address);
-  function vault() public view returns (address);
-  function estimateTotalAssets() public view returns (uint256);
-  function withdraw(uint256 _amount) public returns (uint256);
-  function migrate(address _newStrategy) public;
+  function want() external view returns (address);
+  function vault() external view returns (address);
+  function estimateTotalAssets() external view returns (uint256);
+  function withdraw(uint256 _amount) external returns (uint256);
+  function migrate(address _newStrategy) external;
 }
 
 contract xvUSDT is ERC20 {
@@ -28,7 +28,7 @@ contract xvUSDT is ERC20 {
   address public management;
   ERC20 public token;
 
-  GuestList guestList;
+  // GuestList guestList;
 
   struct StrategyParams {
     uint256 performanceFee;     // strategist's fee
@@ -70,13 +70,30 @@ contract xvUSDT is ERC20 {
   event StrategyRemovedFromQueue(address strategy);
   event UpdateManangementFee(uint256 fee);
   event EmergencyShutdown(bool active);
+  event StrategyReported(
+    address indexed strategy,
+    uint256 gain,
+    uint256 loss,
+    uint256 totalGain,
+    uint256 totalLoss,
+    uint256 totalDebt,
+    uint256 debtAdded,
+    uint256 debtRatio
+  );
+  event StrategyAdded(
+    address indexed strategy,
+    uint256 debtRatio,
+    uint256 rateLimit,
+    uint256 performanceFee
+  );
+  event StrategyRevoked(
+    address indexed strategy
+  );
 
   constructor(
     address _token,
     address _governance,
-    address _treasury,
-    string memory _nameOverride,
-    string memory _symbolOverride
+    address _treasury
   ) 
   public ERC20(
     string(abi.encodePacked("xend ", ERC20(_token).name())),
@@ -97,15 +114,15 @@ contract xvUSDT is ERC20 {
     _setupDecimals(ERC20(_token).decimals());
   }
 
-  function setName(string memory _name) external {
-    require(msg.sender == governance, "!governance");
-    name = _name;
-  }
+  // function setName(string memory _name) external {
+  //   require(msg.sender == governance, "!governance");
+  //   name = _name;
+  // }
 
-  function setSymbol(string memory _symbol) external {
-    require(msg.sender == governance, "!governance");
-    symbol = _symbol;
-  }
+  // function setSymbol(string memory _symbol) external {
+  //   require(msg.sender == governance, "!governance");
+  //   symbol = _symbol;
+  // }
 
   function setTreasury(address _treasury) external {
     require(msg.sender == governance, "!governance");
@@ -133,11 +150,11 @@ contract xvUSDT is ERC20 {
     governance = _governance;
   }
 
-  function setGuestList(address _guestList) external {
-    require(msg.sender == governance, "!governance");
-    guestList = GuestList(_guestList);
-    emit UpdateGuestList(guestList);
-  }
+  // function setGuestList(address _guestList) external {
+  //   require(msg.sender == governance, "!governance");
+  //   guestList = GuestList(_guestList);
+  //   emit UpdateGuestList(guestList);
+  // }
 
   function setDepositLimit(uint256 limit) external {
     require(msg.sender == governance, "!governance");
@@ -192,9 +209,9 @@ contract xvUSDT is ERC20 {
     // call external function
   }
 
-  function depositAll() external {
-    deposit(token.balanceOf(msg.sender), msg.sender);
-  }
+  // function depositAll() external {
+  //   deposit(token.balanceOf(msg.sender), msg.sender);
+  // }
 
   function _issueSharesForAmount(address to, uint256 amount) internal returns (uint256) {
     uint256 shares = 0;
@@ -212,13 +229,16 @@ contract xvUSDT is ERC20 {
 
   function deposit(uint256 _amount) public returns (uint256) {
     require(emergencyShutdown != true, "in status of Emergency Shutdown");
-    uint256 amount = min(depositLimit - _totalAssets(), token.balanceOf(msg.sender));
+    uint256 amount = _amount;
+    if (amount == 0) {
+      amount = _min(depositLimit - _totalAssets(), token.balanceOf(msg.sender));
+    }
     
     require(amount > 0, "deposit amount should be bigger than zero");
 
     uint256 shares = _issueSharesForAmount(msg.sender, amount);
 
-    token.safeTransferFrom(msg.sender, address(this), _amount);
+    token.safeTransferFrom(msg.sender, address(this), amount);
     
     return shares;
   }
@@ -229,8 +249,16 @@ contract xvUSDT is ERC20 {
     ERC20(reserve).safeTransfer(governance, amount);
   }
 
+  /**
+   * Return the total quantity of assets
+   * i.e. current balance of assets + total assets that strategies borrowed from the vault 
+   */
   function _totalAssets() internal view returns (uint256) {
     return token.balanceOf(address(this)) + totalDebt;
+  }
+
+  function totalAssets() external view returns (uint256) {
+    return _totalAssets();
   }
 
   function _shareValue(uint256 _share) internal view returns (uint256) {
@@ -273,7 +301,7 @@ contract xvUSDT is ERC20 {
         }
 
         uint256 amountNeeded = value - token.balanceOf(address(this));    // recalculate the needed token amount to withdraw
-        amountNeeded = min(amountNeeded, strategies[strategy].totalDebt);
+        amountNeeded = _min(amountNeeded, strategies[strategy].totalDebt);
         if (amountNeeded == 0)
           continue;
         
@@ -286,7 +314,7 @@ contract xvUSDT is ERC20 {
           totalLoss = totalLoss.add(loss);
           strategies[strategy].totalLoss = strategies[strategy].totalLoss.add(loss);
         }
-        strategies[strategy].totalDebt = strategies[strategy].sub(withdrawn.add(loss));
+        strategies[strategy].totalDebt = strategies[strategy].totalDebt.sub(withdrawn.add(loss));
         totalDebt = totalDebt.sub(withdrawn.add(loss));
       }
 
@@ -301,8 +329,6 @@ contract xvUSDT is ERC20 {
     _burn(msg.sender, shares);
 
     emit Transfer(msg.sender, address(0), shares);
-
-    uint256 b = token.balanceOf(address(this));
     
     token.safeTransfer(recipient, value);
     
@@ -359,11 +385,11 @@ contract xvUSDT is ERC20 {
     emit StrategyRevoked(_strategy);
   }
 
-  function expectedReturn(address _strategy) external returns (uint256) {
+  function expectedReturn(address _strategy) external view returns (uint256) {
     _expectedReturn(_strategy);
   }
 
-  function _expectedReturn(address _strategy) internal returns (uint256) {
+  function _expectedReturn(address _strategy) internal view returns (uint256) {
     uint256 delta = block.timestamp - strategies[_strategy].lastReport;
     if (delta > 0) {
       return strategies[_strategy].totalGain.mul(delta).div(block.timestamp - strategies[_strategy].activation);
@@ -402,11 +428,14 @@ contract xvUSDT is ERC20 {
    * @notice
    * returns token amount to withdraw from the strategy
    */
-  function debtOutstanding(address _strategy) external returns (uint256) {
+  function debtOutstanding(address _strategy) external view returns (uint256) {
     return _debtOutstanding(_strategy);
   }
 
-  function _debtOutstanding(address _strategy) internal returns (uint256) {
+  /**
+   * Returns assets amount of strategy that is past its debt limit
+   */
+  function _debtOutstanding(address _strategy) internal view returns (uint256) {
     uint256 strategy_debtLimit = strategies[_strategy].debtRatio * _totalAssets() / MAX_BPS;
     uint256 strategy_totalDebt = strategies[_strategy].totalDebt;
 
@@ -454,10 +483,10 @@ contract xvUSDT is ERC20 {
     totalDebt = totalDebt.sub(loss);
 
     uint256 _debtRatio = strategies[_strategy].debtRatio;
-    strategies[_strategy].debtRatio = _debtRatio.sub(min(loss.mul(MAX_BPS).div(_totalAssets()), _debtRatio));     // reduce debtRatio if loss happens
+    strategies[_strategy].debtRatio = _debtRatio.sub(_min(loss.mul(MAX_BPS).div(_totalAssets()), _debtRatio));     // reduce debtRatio if loss happens
   }
 
-  function _creditAvailable(address _strategy) internal returns (uint256) {
+  function _creditAvailable(address _strategy) internal view returns (uint256) {
     if (emergencyShutdown) {
       return 0;
     }
@@ -476,17 +505,22 @@ contract xvUSDT is ERC20 {
     }
 
     uint256 _available = strategy_debtLimit - strategy_totalDebt;
-    _available = min(available, vault_debtLimit - vault_totalDebt);
+    _available = _min(_available, vault_debtLimit - vault_totalDebt);
 
     // if available token amount is bigger than the limit per report period, adjust it.
     uint256 delta = block.timestamp - strategy_lastReport;      // time difference between current time and last report(i.e. harvest)
-    if (strategy_rateLimit > 0 && available >= strategy_rateLimit * delta) {
-      available = strategy_rateLimit * delta;
+    if (strategy_rateLimit > 0 && _available >= strategy_rateLimit * delta) {
+      _available = strategy_rateLimit * delta;
     }
 
-    return min(available, token.balanceOf(address(this)));
+    return _min(_available, token.balanceOf(address(this)));
   }
 
+  /**
+   * Reports the amount of assets the calling Strategy has free
+   * The performance fee, strategist's fee are determined here
+   * Returns outstanding debt
+   */
   function report(uint256 gain, uint256 loss, uint256 _debtPayment) external returns (uint256) {
     require(strategies[msg.sender].activation > 0, "strategy should be active");
     require(token.balanceOf(msg.sender) >= gain + _debtPayment, "insufficient token balance of strategy");
@@ -497,10 +531,10 @@ contract xvUSDT is ERC20 {
 
     _assessFees(msg.sender, gain);
 
-    strategies[msg.sender].totalGain = strategies[msg.sender].add(gain);
+    strategies[msg.sender].totalGain = strategies[msg.sender].totalGain.add(gain);
 
     uint256 debt = _debtOutstanding(msg.sender);
-    uint256 debtPayment = min(_debtPayment, debt);
+    uint256 debtPayment = _min(_debtPayment, debt);
 
     if (debtPayment > 0) {
       strategies[msg.sender].totalDebt = strategies[msg.sender].totalDebt.sub(debtPayment);
@@ -511,11 +545,46 @@ contract xvUSDT is ERC20 {
     // get the available tokens to borrow from the vault
     uint256 credit = _creditAvailable(msg.sender);
 
-    // if (credit > 0) {
-    //   strategies[msg.sender].totalDebt = strategies[msg.sender].totalDebt + credit;
-    //   totalDebt = totalDebt + credit;
-    // }
+    if (credit > 0) {
+      strategies[msg.sender].totalDebt = strategies[msg.sender].totalDebt + credit;
+      totalDebt = totalDebt + credit;
+    }
 
+    uint256 totalAvailable = gain + debtPayment;
+    if (totalAvailable < credit) {
+      token.transfer(msg.sender, credit - totalAvailable);
+    } else if (totalAvailable > credit) {
+      token.transferFrom(msg.sender, address(this), totalAvailable - credit);
+    }
+    // if totalAvailable == credit, it is already balanced so do nothing.
+
+    strategies[msg.sender].lastReport = block.timestamp;
+    lastReport = block.timestamp;
+
+    emit StrategyReported(
+      msg.sender,
+      gain,
+      loss,
+      strategies[msg.sender].totalGain,
+      strategies[msg.sender].totalLoss,
+      strategies[msg.sender].totalDebt,
+      credit,
+      strategies[msg.sender].debtRatio
+    );
+
+    if (strategies[msg.sender].debtRatio == 0 || emergencyShutdown) {
+      // this block is used for getting penny
+      // if Strategy is rovoked or exited for emergency, it could have some token that wan't withdrawn
+      // this is different from debt
+      Strategy(msg.sender).estimateTotalAssets();
+    } else {
+      return debt;
+    }
+
+  }
+
+  function _min(uint256 a, uint256 b) internal pure returns (uint256) {
+    return a < b ? a : b;
   }
 
 }

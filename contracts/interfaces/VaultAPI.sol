@@ -27,7 +27,7 @@ interface VaultAPI is IERC20 {
 
   function creditAvailable() external view returns (uint256);
 
-  function debtOutstanding() external view returns (uint256);
+  function debtOutstanding(address _strategy) external view returns (uint256);
 
   function expectedReturn() external view returns (uint256);
 

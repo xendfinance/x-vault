@@ -36,6 +36,7 @@ abstract contract BaseStrategy {
   bool public emergencyExit;
 
   event EmergencyExitEnabled();
+  event Harvested(uint256 profit, uint256 loss, uint256 debtPayment, uint256 debtOutstanding);
 
   modifier onlyKeepers() {
     require(msg.sender == keeper || msg.sender == strategist || msg.sender == governance(), "!keeper & !strategist & !governance");
@@ -44,6 +45,11 @@ abstract contract BaseStrategy {
 
   modifier onlyAuthorized() {
     require(msg.sender == strategist || msg.sender == governance(), "!strategist & !governance");
+    _;
+  }
+
+  modifier onlyGovernance() {
+    require(msg.sender == governance(), "!authorized");
     _;
   }
 
@@ -88,7 +94,7 @@ abstract contract BaseStrategy {
   }
 
   function tend() external onlyKeepers {
-    adjustPosition(vault.debtOutstanding());
+    adjustPosition(vault.debtOutstanding(address(this)));
   }
 
   function harvestTrigger(uint256 callCost) public virtual view returns (bool) {
@@ -98,7 +104,7 @@ abstract contract BaseStrategy {
 
     if (block.timestamp.sub(params.lastReport) >= maxReportDelay) return true;
 
-    uint256 outstanding = vault.debtOutstanding();
+    uint256 outstanding = vault.debtOutstanding(address(this));
     if (outstanding > debtThreshold) return true;
 
     uint256 total = estimatedTotalAssets();
@@ -116,18 +122,59 @@ abstract contract BaseStrategy {
    * @notice
    * Harvest the strategy.
    * This function can be called only by governance, the strategist or the keeper
+   * harvest function is called in order to take in profits, to borrow newly available funds from the vault, or adjust the position
    */
 
   function harvest() external onlyKeepers {
     uint256 profit = 0;
     uint256 loss = 0;
-    uint256 debtOutstanding = vault.debtOutstanding();
+    uint256 debtOutstanding = vault.debtOutstanding(address(this));
     uint256 debtPayment = 0;
 
     if (emergencyExit) {
       uint256 totalAssets = estimatedTotalAssets();     // accurated estimate for the total amount of assets that the strategy is managing in terms of want token.
       (debtPayment, loss) = liquidatePosition(totalAssets > debtOutstanding ? totalAssets : debtOutstanding);
+      if (debtPayment > debtOutstanding) {
+        profit = debtPayment.sub(debtOutstanding);
+        debtPayment = debtOutstanding;
+      }
+    } else {
+      (profit, loss, debtPayment) = prepareReturn(debtOutstanding);
     }
+
+    // this debtOutstanding is prevDebtOutstanding - debtPayment
+    debtOutstanding = vault.report(profit, loss, debtPayment);
+
+    distributeRewards();
+    adjustPosition(debtOutstanding);
+
+    emit Harvested(profit, loss, debtPayment, debtOutstanding);
+  }
+
+  // withdraw assets to the vault
+  function withdraw(uint256 _amountNeeded) external returns (uint256 _loss) {
+    require(msg.sender == address(vault), "!vault");
+    uint256 amountFreed;
+    (amountFreed, _loss) = liquidatePosition(_amountNeeded);
+    want.transfer(msg.sender, amountFreed);
+  }
+
+  /**
+   * Do anything necessary to prepare this Strategy for migration, such as
+   * transferring any reserve or LP tokens, CDPs, or other tokens or stores of
+   * value.
+   */
+  function prepareMigration(address _newStrategy) internal virtual;
+
+  
+  /**
+   * Transfer all assets from current strategy to new strategy
+   */
+  function migrate(address _newStrategy) external {
+    require(msg.sender == address(vault) || msg.sender == governance());
+    require(BaseStrategy(_newStrategy).vault() == vault);
+    prepareMigration(_newStrategy);
+    want.transfer(_newStrategy, want.balanceOf(address(this)));
   }
 
   /**
@@ -141,5 +188,17 @@ abstract contract BaseStrategy {
     vault.revokeStrategy();
 
     emit EmergencyExitEnabled();
+  }
+
+  function protectedTokens() internal virtual view returns (address[] memory);
+
+  function sweep(address _token) external onlyGovernance {
+    require(_token != address(want), "!want");
+    require(_token != address(vault), "!shares");
+
+    address[] memory _protectedTokens = protectedTokens();
+    for (uint256 i; i < _protectedTokens.length; i++) require(_token != _protectedTokens[i], "!protected");
+
+    IERC20(_token).transfer(governance(), IERC20(_token).balanceOf(address(this)));
   }
 }
