@@ -8,13 +8,13 @@ import "../interfaces/VaultAPI.sol";
 abstract contract BaseStrategy {
   using SafeMath for uint256;
   
-  function apiVersion() public returns (string memory) {
+  function apiVersion() public pure returns (string memory) {
     return '0.1.0';
   }
 
   function name() external virtual view returns (string memory);
 
-  function delegatedAssets() external virtual view returns (uint256) {
+  function delegatedAssets() external virtual pure returns (uint256) {
     return 0;
   }
 
@@ -142,7 +142,8 @@ abstract contract BaseStrategy {
       (profit, loss, debtPayment) = prepareReturn(debtOutstanding);
     }
 
-    // this debtOutstanding is prevDebtOutstanding - debtPayment
+    // returns available free tokens of this strategy
+    // this debtOutstanding becomes prevDebtOutstanding - debtPayment
     debtOutstanding = vault.report(profit, loss, debtPayment);
 
     distributeRewards();

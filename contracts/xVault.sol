@@ -556,8 +556,9 @@ contract xvUSDT is ERC20 {
     } else if (totalAvailable > credit) {
       token.transferFrom(msg.sender, address(this), totalAvailable - credit);
     }
-    // if totalAvailable == credit, it is already balanced so do nothing.
+    // else (if totalAvailable == credit), it is already balanced so do nothing.
 
+    // Update reporting time
     strategies[msg.sender].lastReport = block.timestamp;
     lastReport = block.timestamp;
 

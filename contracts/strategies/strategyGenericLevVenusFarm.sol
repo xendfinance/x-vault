@@ -119,6 +119,8 @@ contract Strategy is BaseStrategy {
     return amounts[amounts.length - 1];
   }
 
+  // debtPayment is token amount to return to vault
+  // debtOutstanding is token amount that the vault ask to return
   function prepareReturn(uint256 _debtOutstanding) internal override returns (
     uint256 _profit,
     uint256 _loss,
@@ -135,8 +137,8 @@ contract Strategy is BaseStrategy {
 
     (uint256 deposits, uint256 borrows) = getLivePosition();
 
-    _claimXvs();
-    _disposeXvs();
+    _claimXvs();          // claim xvs tokens
+    _disposeOfXvs();      // sell xvs tokens
 
     uint256 wantBalance = want.balanceOf(address(this));
 
@@ -144,6 +146,31 @@ contract Strategy is BaseStrategy {
     uint256 balance = investedBalance.add(wantBalance);
 
     uint256 debt = vault.strategies(address(this)).totalDebt; 
+
+    if (balance > debt) {
+      _profit = balance - debt;
+      if (wantBalance < _profit) {
+        _debtPayment = wantBalance;
+      } else if (wantBalance > _profit.add(_debtOutstanding)) {
+        _debtPayment = _debtOutstanding;
+      } else {
+        _debtPayment = wantBalance - _profit;
+      }
+    } else {
+      _loss = debt - balance;
+      _debtPayment = _min(wantBalance, _debtOutstanding);
+    }
+  }
+
+  // adjustPosition is called after report call
+  // adjust the position using free available tokens
+  function adjustPosition(uint256 _debtOutstanding) internal override {
+    if (emergencyExit) {
+      return;
+    }
+
+    uint256 _wantBal = want.balanceOf(address(this));
+    // if (_wantBal < _debtOutstanding)
   }
 
   function getLivePosition() public returns (uint256 deposits, uint256 borrows) {
@@ -157,7 +184,7 @@ contract Strategy is BaseStrategy {
     venus.claimVenus(address(this), tokens);
   }
 
-  function _disposeXvs() internal {
+  function _disposeOfXvs() internal {
     uint256 _xvs = IERC20(xvs).balanceOf(address(this));
 
     if (_xvs > minXvsToSell) {
