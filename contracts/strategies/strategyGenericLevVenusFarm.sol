@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.6.12;
+pragma experimental ABIEncoderV2;
+
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./BaseStrategy.sol";
 import "../interfaces/venus/VBep20I.sol";
 import "../interfaces/venus/UnitrollerI.sol";
 import "../interfaces/uniswap/IUniswapV2Router.sol";
+import "../interfaces/flashloan/IFlashloanReceiver.sol";
 
 
-contract Strategy is BaseStrategy {
+contract Strategy is BaseStrategy, IFlashLoanReceiver {
   using SafeERC20 for IERC20;
   using Address for address;
   using SafeMath for uint256;
@@ -20,20 +23,60 @@ contract Strategy is BaseStrategy {
   address public constant wbnb = address(0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c);
 
   address public constant uniswapRouter = address(0x10ED43C718714eb63d5aA57B78B54704E256024E);
+  address public constant crWant = address(0xEF6d459FE81C3Ed53d292c936b2df5a8084975De);
+
+  uint256 public collateralTarget = 0.73 ether; // 73%
+  uint256 public blocksToLiquidationDangerZone = 46500; // 7 days =  60*60*24*7/13
+  uint256 public minWant = 0;
+
+  bool public flashLoanActive = true;
+
+  bool public forceMigrate = false;
 
   VBep20I public vToken;
   uint256 secondsPerBlock = 13;     // roughly 13 seconds per block
   uint256 public minXvsToSell = 0.1 ether;
+
+  // @notice emitted when trying to do Flash Loan. flashLoan address is 0x00 when no flash loan used
+  event Leverage(uint256 amountRequested, uint256 amountGiven, bool deficit, address flashLoan);
+
+  modifier management(){
+    require(msg.sender == governance() || msg.sender == strategist, "!management");
+    _;
+  }
 
   constructor(address _vault, address _vToken) public BaseStrategy(_vault) {
     vToken = VBep20I(_vToken);
     want.safeApprove(address(vToken), uint256(-1));
     
     maxReportDelay = 3600 * 24;
+    profitFactor = 100;
   }
 
   function name() external override view returns (string memory) {
     return "strategyGenericLevVenusFarm";
+  }
+
+  function setFlashLoan(bool active) external management {
+    flashLoanActive = active;
+  }
+
+  function setForceMigrate(bool _force) external onlyGovernance {
+    forceMigrate = _force;
+  }
+
+  function setMinXvsToSell(uint256 _minXvsToSell) external management {
+    minXvsToSell = _minXvsToSell;
+  }
+
+  function setMinWant(uint256 _minWant) external management {
+    minWant = _minWant;
+  }
+
+  function setCollateralTarget(uint256 _collateralTarget) external management {
+    (, uint256 collateralFactorMantissa, ) = venus.markets(address(vToken));
+    require(collateralFactorMantissa > _collateralTarget, "!danagerous collateral");
+    collateralTarget = _collateralTarget;
   }
 
   function estimatedTotalAssets() public override view returns (uint256) {
@@ -58,11 +101,80 @@ contract Strategy is BaseStrategy {
     }
   }
 
+  function tendTrigger(uint256 gasCost) public override view returns (bool) {
+    if (harvestTrigger(gasCost)) {
+      return false;
+    }
+
+    if (getblocksUntilLiquidation() <= blocksToLiquidationDangerZone) {
+      return true;
+    }
+  }
+
+  function getblocksUntilLiquidation() public view returns (uint256) {
+    (, uint256 collateralFactorMantissa, ) = venus.markets(address(vToken));
+    
+    (uint256 deposits, uint256 borrows) = getCurrentPosition();
+    
+    uint256 borrowRate = vToken.borrowRatePerBlock();
+    uint256 supplyRate = vToken.supplyRatePerBlock();
+
+    uint256 collateralisedDeposit1 = deposits.mul(collateralFactorMantissa).div(1e18);
+    uint256 collateralisedDeposit = collateralisedDeposit1;
+
+    uint256 denom1 = borrows.mul(borrowRate);
+    uint256 denom2 = collateralisedDeposit.mul(supplyRate);
+
+    if (denom2 >= denom1) {
+      return uint256(-1);
+    } else {
+      uint256 numer = collateralisedDeposit.sub(borrows);
+      uint256 denom = denom1 - denom2;
+      return numer.mul(1e18).div(denom);
+    }
+  }
+
   function getCurrentPosition() public view returns (uint256 deposits, uint256 borrows) {
     (, uint256 vTokenBalance, uint256 borrowBalance, uint256 exchangeRate) = vToken.getAccountSnapshot(address(this));
     borrows = borrowBalance;
 
     deposits = vTokenBalance.mul(exchangeRate).div(1e18);
+  }
+
+  function netBalanceLent() public view returns (uint256) {
+    (uint256 deposits, uint256 borrows) = getCurrentPosition();
+    return deposits.sub(borrows);
+  }
+
+  function harvestTrigger(uint256 gasCost) public override view returns (bool) {
+    StrategyParams memory params = vault.strategies(address(this));
+
+    if (params.activation == 0) return false;
+
+    uint256 wantGasCost = priceCheck(wbnb, address(want), gasCost);
+    uint256 venusGasCost = priceCheck(wbnb, xvs, gasCost);
+
+    uint256 _claimableXVS = predictXvsAccrued();
+
+    if (_claimableXVS > minXvsToSell) {
+      if (_claimableXVS.add(IERC20(xvs).balanceOf(address(this))) > venusGasCost.mul(profitFactor)) {
+        return true;
+      }
+    }
+
+    // trigger if hadn't been called in a while
+    if (block.timestamp.sub(params.lastReport) >= maxReportDelay) return true;
+
+    uint256 outstanding = vault.debtOutstanding(address(this));
+    if (outstanding > profitFactor.mul(wantGasCost)) return true;
+
+    uint256 total = estimatedTotalAssets();
+
+    uint256 profit = 0;
+    if (total > params.totalDebt) profit = total.sub(params.totalDebt);
+
+    uint256 credit = vault.creditAvailable().add(profit);
+    return (profitFactor.mul(wantGasCost) < credit);
   }
 
   /**
@@ -95,6 +207,23 @@ contract Strategy is BaseStrategy {
     uint256 blocksSinceLast = (block.timestamp.sub(lastReport)).div(secondsPerBlock);
 
     return blocksSinceLast.mul(blockShare);
+  }
+
+  function prepareMigration(address _newStrategy) internal override {
+    if (!forceMigrate) {
+      (uint256 deposits, uint256 borrows) = getLivePosition();
+      _withdrawSome(deposits.sub(borrows));
+
+      (, , uint256 borrowBalance, ) = vToken.getAccountSnapshot(address(this));
+
+      require(borrowBalance < 10_000, "DELEVERAGE_FIRST");
+
+      IERC20 _xvs = IERC20(xvs);
+      uint _xvsBalance = _xvs.balanceOf(address(this));
+      if (_xvsBalance > 0) {
+        _xvs.safeTransfer(_newStrategy, _xvsBalance);
+      }
+    }
   }
 
   function priceCheck(address start, address end, uint256 _amount) public view returns (uint256) {
@@ -170,7 +299,220 @@ contract Strategy is BaseStrategy {
     }
 
     uint256 _wantBal = want.balanceOf(address(this));
-    // if (_wantBal < _debtOutstanding)
+    if (_wantBal < _debtOutstanding) {
+      if (vToken.balanceOf(address(this)) > 1) {
+        _withdrawSome(_debtOutstanding - _wantBal);
+      }
+
+      return;
+    }
+
+    (uint256 position, bool deficit) = _calculateDesiredPosition(_wantBal - _debtOutstanding, true);
+
+    if (position > minWant) {
+      if (!flashLoanActive) {
+        uint i = 0;
+        while(position > 0) {
+          position = position.sub(_noFlashLoan(position, deficit));
+          if (i >= 6) {
+            break;
+          }
+          i++;
+        }
+      } else {
+        if (position > want.balanceOf(crWant)) {
+          position = position.sub(_noFlashLoan(position, deficit));
+        }
+
+        if (position > minWant) {
+          doFlashLoan(deficit, position);
+        }
+      }
+    }
+  }
+
+  function _withdrawSome(uint256 _amount) internal returns (bool notAll) {
+    (uint256 position, bool deficit) = _calculateDesiredPosition(_amount, false);
+
+    if (deficit && position > minWant) {
+      position = position.sub(doFlashLoan(deficit, position));
+      
+      uint8 i = 0;
+      while (position > minWant.add(100)) {
+        position = position.sub(_noFlashLoan(position, true));
+        i++;
+
+        if (i >= 5) {
+          notAll = true;
+          break;
+        }
+      }
+    }
+
+    (uint256 depositBalance, uint256 borrowBalance) = getCurrentPosition();
+    uint256 tempColla = collateralTarget;
+
+    uint256 reservedAmount = 0;
+    if (tempColla == 0) {
+      tempColla = 1e15;
+    }
+
+    reservedAmount = borrowBalance.mul(1e18).div(tempColla);
+
+    if (depositBalance >= reservedAmount) {
+      uint256 redeemable = depositBalance.sub(reservedAmount);
+
+      if (redeemable < _amount) {
+        vToken.redeemUnderlying(redeemable);
+      } else {
+        vToken.redeemUnderlying(_amount);
+      }
+    }
+
+    if (collateralTarget == 0 && want.balanceOf(address(this)) > borrowBalance) {
+      vToken.repayBorrow(borrowBalance);
+    }
+
+    _disposeOfXvs();
+  }
+
+  /**
+   * This function calculate the borrow position(the amount to add or remove) based on lending balance.
+   * Input: balance. the amount we're going to deposit or withdraw to venus platform
+   * Input: dep. flag(True/False) to deposit or withdraw
+   * Output: position. the amount we want to change current borrow position
+   * Output: deficit. flag(True/False). if reducing the borrow size, true
+   */
+  
+  function _calculateDesiredPosition(uint256 balance, bool dep) internal returns(uint256 position, bool deficit) {
+    (uint256 deposits, uint256 borrows) = getLivePosition();
+    uint256 unwoundDeposit = deposits.sub(borrows);   // available token amount on lending platform. i.e. lended amount - borrowed amount
+
+    uint256 desiredSupply = 0;
+    if (dep) {
+      desiredSupply = unwoundDeposit.add(balance);
+    } else {
+      if (balance > unwoundDeposit) balance = unwoundDeposit;
+      desiredSupply = unwoundDeposit.sub(balance);
+    }
+
+    // db = (ds * c) / (1 - c): used dai formular, it could or should be refactored later to get high-efficient
+    uint256 num = desiredSupply.mul(collateralTarget);
+    uint256 den = uint256(1e18).sub(collateralTarget);
+
+    uint256 desiredBorrow = num.div(den);
+    
+    if (desiredBorrow < borrows) {
+      deficit = true;
+      position = borrows - desiredBorrow;
+    } else {
+      deficit = false;
+      position = desiredBorrow - borrows;
+    }
+  }
+
+  function doFlashLoan(bool deficit, uint256 amountDesired) internal returns (uint256) {
+    if (amountDesired == 0) {
+      return 0;
+    }
+
+    uint256 amount = amountDesired;
+    bytes memory data = abi.encode(deficit, amount);
+
+    ICTokenFlashloan(crWant).flashLoan(address(this), amount, data);
+    emit Leverage(amountDesired, amount, deficit, crWant);
+
+    return amount;
+    
+  }
+
+  function _noFlashLoan(uint256 max, bool deficit) internal returns (uint256 amount) {
+    (uint256 lent, uint256 borrowed) = getCurrentPosition();
+    // if we have nothing borrowed, can't deleverage any more(can't reduce borrow size)
+    if (borrowed == 0 && deficit) {
+      return 0;
+    }
+    (, uint256 collateralFactorMantissa, ) = venus.markets(address(vToken));
+
+    if (deficit) {
+      amount = _normalDeleverage(max, lent, borrowed, collateralFactorMantissa);
+    } else {
+      amount = _normalLeverage(max, lent, borrowed, collateralFactorMantissa);
+    }
+
+    emit Leverage(max, amount, deficit, address(0));
+  }
+
+  function _normalDeleverage(
+    uint256 maxDeleverage,
+    uint256 lent,
+    uint256 borrowed,
+    uint256 collatRatio
+  ) internal returns (uint256 deleveragedAmount) {
+    uint256 theoreticalLent = 0;
+    if (collatRatio != 0) {
+      theoreticalLent = borrowed.mul(1e18).div(collatRatio);
+    }
+    deleveragedAmount = lent.sub(theoreticalLent);
+
+    if (deleveragedAmount >= borrowed) {
+      deleveragedAmount = borrowed;
+    }
+    if (deleveragedAmount >= maxDeleverage) {
+      deleveragedAmount = maxDeleverage;
+    }
+
+    uint256 exchangeRateStored = vToken.exchangeRateStored();
+
+    if (deleveragedAmount.mul(1e18) >= exchangeRateStored && deleveragedAmount > 10) {
+      deleveragedAmount = deleveragedAmount - 10;
+      vToken.redeemUnderlying(deleveragedAmount);
+
+      vToken.repayBorrow(deleveragedAmount);
+    }
+  }
+
+  function _normalLeverage(
+    uint256 maxLeverage,
+    uint256 lent,
+    uint256 borrowed,
+    uint256 collatRatio
+  ) internal returns (uint256 leveragedAmount) {
+    uint256 theoreticalBorrow = lent.mul(collatRatio).div(1e18);
+    leveragedAmount = theoreticalBorrow.sub(borrowed);
+
+    if (leveragedAmount >= maxLeverage) {
+      leveragedAmount = maxLeverage;
+    }
+    if (leveragedAmount > 10) {
+      leveragedAmount = leveragedAmount - 10;
+      vToken.borrow(leveragedAmount);
+      vToken.mint(want.balanceOf(address(this)));
+    }
+  }
+
+  // 
+  function executeOperation(address sender, address underlying, uint amount, uint fee, bytes calldata params) override external {
+    uint currentBalance = IERC20(underlying).balanceOf(address(this));
+    require(msg.sender == crWant, "Not Flash Loan Provider");
+    require(currentBalance >= amount, "Invalid balance, was the flashloan successful?");
+    (bool deficit, ) = abi.decode(params, (bool, uint256));
+
+    _loanLogic(deficit, amount, amount + fee);
+    
+  }
+
+  function _loanLogic(bool deficit, uint256 amount, uint256 repayAmount) internal {
+    uint256 bal = want.balanceOf(address(this));
+    require(bal >= amount, "Flash loan failed");
+
+    if (deficit) {
+      vToken.repayBorrow(amount);
+      vToken.redeemUnderlying(repayAmount);
+    } else {
+      require(vToken.mint(bal) == 0, "mint error");
+      vToken.borrow(repayAmount);
+    }
   }
 
   function getLivePosition() public returns (uint256 deposits, uint256 borrows) {
@@ -195,6 +537,38 @@ contract Strategy is BaseStrategy {
 
       IUniswapV2Router02(uniswapRouter).swapExactTokensForTokens(_xvs, uint256(0), path, address(this), now);
     }
+  }
+
+  function liquidatePosition(uint256 _amountNeeded) internal override returns (uint256 _amountFreed, uint256 _loss) {
+    uint256 _balance = want.balanceOf(address(this));
+    uint256 assets = netBalanceLent().add(_balance);
+
+    uint256 debtOutstanding = vault.debtOutstanding(address(this));
+
+    if (debtOutstanding > assets) {
+      _loss = debtOutstanding - assets;
+    }
+
+    if (assets < _amountNeeded) {
+      (uint256 deposits, uint256 borrows) = getLivePosition();
+      if (vToken.balanceOf(address(this)) > 1) {
+        _withdrawSome(deposits.sub(borrows));
+      }
+
+      _amountFreed = _min(_amountNeeded, want.balanceOf(address(this)));
+    } else {
+      if (_balance < _amountNeeded) {
+        _withdrawSome(_amountNeeded.sub(_balance));
+        _amountFreed = _min(_amountNeeded, want.balanceOf(address(this)));
+      } else {
+        _amountFreed = _amountNeeded;
+      }
+    }
+  }
+
+  function protectedTokens() internal override view returns (address[] memory) {
+    address[] memory protected = new address[](0);
+    return protected;
   }
 
   function _min(uint256 a, uint256 b) internal pure returns (uint256) {

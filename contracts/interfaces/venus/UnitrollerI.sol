@@ -77,5 +77,7 @@ interface UnitrollerI {
   function claimVenus(address holder) external;
   function claimVenus(address holder, VTokenI[] memory vTokens) external;
 
+  function markets(address vToken) external view returns (bool, uint256, bool);
+
   function venusSpeeds(address vtoken) external view returns (uint256);
 }

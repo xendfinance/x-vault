@@ -18,6 +18,7 @@ interface Strategy {
   function migrate(address _newStrategy) external;
 }
 
+
 contract xvUSDT is ERC20 {
   using SafeERC20 for ERC20;
   using Address for address;
@@ -209,9 +210,9 @@ contract xvUSDT is ERC20 {
     // call external function
   }
 
-  // function depositAll() external {
-  //   deposit(token.balanceOf(msg.sender), msg.sender);
-  // }
+  function depositAll() external {
+    deposit(token.balanceOf(msg.sender));
+  }
 
   function _issueSharesForAmount(address to, uint256 amount) internal returns (uint256) {
     uint256 shares = 0;
