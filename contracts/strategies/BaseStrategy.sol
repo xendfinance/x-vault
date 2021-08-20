@@ -126,30 +126,30 @@ abstract contract BaseStrategy {
    */
 
   function harvest() external onlyKeepers {
-    uint256 profit = 0;
-    uint256 loss = 0;
-    uint256 debtOutstanding = vault.debtOutstanding(address(this));
-    uint256 debtPayment = 0;
+    uint256 _profit = 0;
+    uint256 _loss = 0;
+    uint256 _debtOutstanding = vault.debtOutstanding(address(this));
+    uint256 _debtPayment = 0;
 
     if (emergencyExit) {
       uint256 totalAssets = estimatedTotalAssets();     // accurated estimate for the total amount of assets that the strategy is managing in terms of want token.
-      (debtPayment, loss) = liquidatePosition(totalAssets > debtOutstanding ? totalAssets : debtOutstanding);
-      if (debtPayment > debtOutstanding) {
-        profit = debtPayment.sub(debtOutstanding);
-        debtPayment = debtOutstanding;
+      (_debtPayment, _loss) = liquidatePosition(totalAssets > _debtOutstanding ? totalAssets : _debtOutstanding);
+      if (_debtPayment > _debtOutstanding) {
+        _profit = _debtPayment.sub(_debtOutstanding);
+        _debtPayment = _debtOutstanding;
       }
     } else {
-      (profit, loss, debtPayment) = prepareReturn(debtOutstanding);
+      (_profit, _loss, _debtPayment) = prepareReturn(_debtOutstanding);
     }
 
     // returns available free tokens of this strategy
     // this debtOutstanding becomes prevDebtOutstanding - debtPayment
-    debtOutstanding = vault.report(profit, loss, debtPayment);
+    _debtOutstanding = vault.report(_profit, _loss, _debtPayment);
 
     distributeRewards();
-    adjustPosition(debtOutstanding);
+    adjustPosition(_debtOutstanding);
 
-    emit Harvested(profit, loss, debtPayment, debtOutstanding);
+    emit Harvested(_profit, _loss, _debtPayment, _debtOutstanding);
   }
 
   // withdraw assets to the vault

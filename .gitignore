@@ -8,4 +8,5 @@
 /accounts.json
 /truffle-config.js
 .env
+run-ganache.sh
 /flattens

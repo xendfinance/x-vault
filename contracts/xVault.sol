@@ -19,7 +19,7 @@ interface Strategy {
 }
 
 
-contract xvUSDT is ERC20 {
+contract XVault is ERC20 {
   using SafeERC20 for ERC20;
   using Address for address;
   using SafeMath for uint256;
@@ -48,8 +48,8 @@ contract xvUSDT is ERC20 {
   uint256 public SECS_PER_YEAR = 60 * 60 * 24 * 36525 / 100;
 
   mapping (address => StrategyParams) public strategies;
-  uint256 MAXIMUM_STRATEGIES = 20;
-  address[] public withdrawalQueue;
+  uint256 constant MAXIMUM_STRATEGIES = 20;
+  address[MAXIMUM_STRATEGIES] public withdrawalQueue;
 
   bool public emergencyShutdown;
   
@@ -197,18 +197,6 @@ contract xvUSDT is ERC20 {
     emit EmergencyShutdown(active);
   }
 
-  
-
-  function available() public view returns (uint256) {
-    return token.balanceOf(address(this)).mul(min).div(max);
-  }
-
-  function earn() public {
-    uint256 _bal = available();
-    token.safeTransfer(governance, _bal);
-    
-    // call external function
-  }
 
   function depositAll() external {
     deposit(token.balanceOf(msg.sender));
@@ -339,7 +327,7 @@ contract xvUSDT is ERC20 {
   function addStrategy(address _strategy, uint256 _debtRatio, uint256 _rateLimit, uint256 _performanceFee) public {
     require(_strategy != address(0), "strategy address can't be zero");
     require(msg.sender == governance, "caller must be governance");
-    require(performanceFee <= MAX_BPS, "performance fee should be smaller than ...");
+    require(_performanceFee <= MAX_BPS - performanceFee, "performance fee should be smaller than ...");
 
     strategies[_strategy] = StrategyParams({
       performanceFee: _performanceFee,
@@ -485,6 +473,10 @@ contract xvUSDT is ERC20 {
 
     uint256 _debtRatio = strategies[_strategy].debtRatio;
     strategies[_strategy].debtRatio = _debtRatio.sub(_min(loss.mul(MAX_BPS).div(_totalAssets()), _debtRatio));     // reduce debtRatio if loss happens
+  }
+
+  function creditAvailable(address _strategy) external view returns (uint256) {
+    return _creditAvailable(_strategy);
   }
 
   function _creditAvailable(address _strategy) internal view returns (uint256) {

@@ -27,7 +27,7 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
 
   uint256 public collateralTarget = 0.73 ether; // 73%
   uint256 public blocksToLiquidationDangerZone = 46500; // 7 days =  60*60*24*7/13
-  uint256 public minWant = 0;
+  uint256 public minWant = 1 ether;
 
   bool public flashLoanActive = true;
 
@@ -35,7 +35,7 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
 
   VBep20I public vToken;
   uint256 secondsPerBlock = 13;     // roughly 13 seconds per block
-  uint256 public minXvsToSell = 0.1 ether;
+  uint256 public minXvsToSell = 100000000;
 
   // @notice emitted when trying to do Flash Loan. flashLoan address is 0x00 when no flash loan used
   event Leverage(uint256 amountRequested, uint256 amountGiven, bool deficit, address flashLoan);
@@ -48,6 +48,7 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
   constructor(address _vault, address _vToken) public BaseStrategy(_vault) {
     vToken = VBep20I(_vToken);
     want.safeApprove(address(vToken), uint256(-1));
+    IERC20(xvs).safeApprove(uniswapRouter, uint256(-1));
     
     maxReportDelay = 3600 * 24;
     profitFactor = 100;
@@ -55,6 +56,10 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
 
   function name() external override view returns (string memory) {
     return "strategyGenericLevVenusFarm";
+  }
+
+  function delegatedAssets() external override pure returns (uint256) {
+    return 0;
   }
 
   function setFlashLoan(bool active) external management {
@@ -226,6 +231,8 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     }
   }
 
+  function distributeRewards() internal override {}
+
   function priceCheck(address start, address end, uint256 _amount) public view returns (uint256) {
     if (_amount == 0) {
       return 0;
@@ -396,11 +403,15 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
       desiredSupply = unwoundDeposit.sub(balance);
     }
 
-    // db = (ds * c) / (1 - c): used dai formular, it could or should be refactored later to get high-efficient
+    // db = (ds * c) / (1 - c)
     uint256 num = desiredSupply.mul(collateralTarget);
     uint256 den = uint256(1e18).sub(collateralTarget);
 
     uint256 desiredBorrow = num.div(den);
+    if (desiredBorrow > 1e5) {
+      //stop us going right up to the wire
+      desiredBorrow = desiredBorrow - 1e5;
+    }
     
     if (desiredBorrow < borrows) {
       deficit = true;
@@ -499,10 +510,11 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     (bool deficit, ) = abi.decode(params, (bool, uint256));
 
     _loanLogic(deficit, amount, amount + fee);
+    IERC20(underlying).transfer(crWant, amount + fee);
     
   }
 
-  function _loanLogic(bool deficit, uint256 amount, uint256 repayAmount) internal {
+  function _loanLogic(bool deficit, uint256 amount, uint256 repayAmount) internal returns (uint) {
     uint256 bal = want.balanceOf(address(this));
     require(bal >= amount, "Flash loan failed");
 
@@ -511,7 +523,22 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
       vToken.redeemUnderlying(repayAmount);
     } else {
       require(vToken.mint(bal) == 0, "mint error");
-      vToken.borrow(repayAmount);
+
+      address[] memory vTokens = new address[](1);
+      vTokens[0] = address(vToken);
+      
+      uint256[] memory errors = venus.enterMarkets(vTokens);
+      if (errors[0] != 0) {
+        revert("Comptroller.enterMarkets failed.");
+      }
+      
+      (uint256 error, uint256 liquidity, uint256 shortfall) = venus.getAccountLiquidity(address(this));
+      if (error != 0) {
+        revert("Comptroller.getAccountLiquidity failed.");
+      }
+      require(shortfall == 0, "account underwater");
+      require(liquidity > 0, "account has excess collateral");
+      require(vToken.borrow(repayAmount) == 0, "borrow error");
     }
   }
 
