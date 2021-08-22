@@ -4,7 +4,7 @@
 /scripts/
 /migrations/
 /build/
-/test/
+
 /accounts.json
 /truffle-config.js
 .env
