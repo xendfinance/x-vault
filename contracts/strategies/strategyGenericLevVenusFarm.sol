@@ -84,6 +84,10 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     collateralTarget = _collateralTarget;
   }
 
+  /**
+   * Provide an accurate estimate for the total number of assets (principle + return) that this strategy 
+   * is currently managing.
+   */
   function estimatedTotalAssets() public override view returns (uint256) {
     (uint256 deposits, uint256 borrows) = getCurrentPosition();
     uint256 _claimableXVS = predictXvsAccrued();
@@ -95,6 +99,9 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     return want.balanceOf(address(this)).add(deposits).add(conservativeWant).sub(borrows);
   }
 
+  /**
+   * View how much the vault expect this strategy to return at the current block, based on its present performance (since its last report)
+   */
   function expectedReturn() public view returns (uint256) {
     uint256 estimatedAssets = estimatedTotalAssets();
 
@@ -106,6 +113,9 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     }
   }
 
+  /**
+   * Provide a signal to the keeper that 'tend()' should be called.
+   */
   function tendTrigger(uint256 gasCost) public override view returns (bool) {
     if (harvestTrigger(gasCost)) {
       return false;
@@ -116,6 +126,9 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     }
   }
 
+  /**
+   * Calcuate how many blocks until we are in liquidation based on current interest rates
+   */
   function getblocksUntilLiquidation() public view returns (uint256) {
     (, uint256 collateralFactorMantissa, ) = venus.markets(address(vToken));
     
@@ -139,6 +152,7 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     }
   }
 
+  // Return the current position
   function getCurrentPosition() public view returns (uint256 deposits, uint256 borrows) {
     (, uint256 vTokenBalance, uint256 borrowBalance, uint256 exchangeRate) = vToken.getAccountSnapshot(address(this));
     borrows = borrowBalance;
@@ -151,6 +165,11 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     return deposits.sub(borrows);
   }
 
+  /**
+   * Provide a signal to the keeper that harvest should be called.
+   * The keeper will provide the estimated gas cost that they would pay to call
+   * harvest() function.
+   */
   function harvestTrigger(uint256 gasCost) public override view returns (bool) {
     StrategyParams memory params = vault.strategies(address(this));
 
@@ -214,6 +233,9 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     return blocksSinceLast.mul(blockShare);
   }
 
+  /**
+   * Do anything necessary to prepare this Strategy for migration, such as transferring any reserve.
+   */
   function prepareMigration(address _newStrategy) internal override {
     if (!forceMigrate) {
       (uint256 deposits, uint256 borrows) = getLivePosition();
@@ -338,6 +360,10 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     }
   }
 
+  /**
+   * Input: amount we wanna withdraw and whether 
+   * Return: amount we are able to withdraw 
+   */
   function _withdrawSome(uint256 _amount) internal returns (bool notAll) {
     (uint256 position, bool deficit) = _calculateDesiredPosition(_amount, false);
 
@@ -422,6 +448,9 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     }
   }
 
+  /**
+   * do flash loan with desired amount
+   */
   function doFlashLoan(bool deficit, uint256 amountDesired) internal returns (uint256) {
     if (amountDesired == 0) {
       return 0;
@@ -437,6 +466,10 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     
   }
 
+  /**
+   * max: the max amount we wanna increase our borrowed balance
+   * returns the amount actually did
+   */
   function _noFlashLoan(uint256 max, bool deficit) internal returns (uint256 amount) {
     (uint256 lent, uint256 borrowed) = getCurrentPosition();
     // if we have nothing borrowed, can't deleverage any more(can't reduce borrow size)
@@ -454,6 +487,7 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     emit Leverage(max, amount, deficit, address(0));
   }
 
+  // maxDeleverage is how much we want to reduce by
   function _normalDeleverage(
     uint256 maxDeleverage,
     uint256 lent,
@@ -483,6 +517,7 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     }
   }
 
+  // maxLeverage is how much we want to increase by
   function _normalLeverage(
     uint256 maxLeverage,
     uint256 lent,
@@ -502,7 +537,7 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     }
   }
 
-  // 
+  //Cream calls this function after doing flash loan
   function executeOperation(address sender, address underlying, uint amount, uint fee, bytes calldata params) override external {
     uint currentBalance = IERC20(underlying).balanceOf(address(this));
     require(msg.sender == crWant, "Not Flash Loan Provider");
@@ -514,6 +549,7 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     
   }
 
+  // logic after getting flash-loaned assets, called by executeOperation
   function _loanLogic(bool deficit, uint256 amount, uint256 repayAmount) internal returns (uint) {
     uint256 bal = want.balanceOf(address(this));
     require(bal >= amount, "Flash loan failed");
@@ -547,12 +583,14 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     borrows = vToken.borrowBalanceStored(address(this));
   }
 
+  // claims XVS reward token
   function _claimXvs() internal {
     VTokenI[] memory tokens = new VTokenI[](1);
     tokens[0] = vToken;
     venus.claimVenus(address(this), tokens);
   }
 
+  // sell harvested XVS tokens
   function _disposeOfXvs() internal {
     uint256 _xvs = IERC20(xvs).balanceOf(address(this));
 
@@ -566,6 +604,10 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     }
   }
 
+  /**
+   * Liquidate up to _amountNeeded of asset of this strategy's position
+   * irregardless of slippage.
+   */
   function liquidatePosition(uint256 _amountNeeded) internal override returns (uint256 _amountFreed, uint256 _loss) {
     uint256 _balance = want.balanceOf(address(this));
     uint256 assets = netBalanceLent().add(_balance);

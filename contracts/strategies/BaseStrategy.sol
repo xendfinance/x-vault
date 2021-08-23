@@ -193,6 +193,7 @@ abstract contract BaseStrategy {
 
   function protectedTokens() internal virtual view returns (address[] memory);
 
+  // Removes tokens from this strategy that are not the type of tokens managed by this strategy
   function sweep(address _token) external onlyGovernance {
     require(_token != address(want), "!want");
     require(_token != address(vault), "!shares");
