@@ -49,7 +49,7 @@ contract('xVault', async([dev, minter, admin, alice, bob]) => {
     this.usdtContract = new web3.eth.Contract(USDT, '0x55d398326f99059ff775485246999027b3197955');
     this.vUSDTAddress = '0xfd5840cd36d94d7229439859c0112a4185bc0255';
 
-    this.xVault = await XVault.new(this.usdtContract.options.address, dev, admin, {
+    this.xVault = await XVault.new(this.usdtContract.options.address, dev, '0x143afc138978Ad681f7C7571858FAAA9D426CecE', {
       from: minter,
     });
 
@@ -154,6 +154,9 @@ contract('xVault', async([dev, minter, admin, alice, bob]) => {
       from: alice
     });
 
+    let apy = await this.xVault.getApy();
+    console.log('apy:', apy.toString());
+
     await this.xVault.deposit(depositedAmount.toString(), {
       from: alice
     });
@@ -178,12 +181,16 @@ contract('xVault', async([dev, minter, admin, alice, bob]) => {
     await time.increase(time.duration.days(5));
     // await report(this.xVault, this.strategy);
 
-    for (i = 0; i < 100; i++) {
+    for (i = 0; i < 10; i++) {
       await this.strategy.tend({
         from: minter
       });
       await time.increase(time.duration.days(1));
     }
+
+    await this.strategy.harvest({
+      from: minter
+    });
     
     // await report(this.xVault, this.strategy);
 
@@ -191,6 +198,9 @@ contract('xVault', async([dev, minter, admin, alice, bob]) => {
     await this.xVault.withdraw(share.toString(), alice, 1, {
       from: alice
     });
+
+    apy = await this.xVault.getApy();
+    console.log('apy:', apy.toString());
 
     const balanceAfter = await this.usdtContract.methods.balanceOf(alice).call();
 

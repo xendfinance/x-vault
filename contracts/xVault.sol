@@ -18,6 +18,10 @@ interface Strategy {
   function migrate(address _newStrategy) external;
 }
 
+interface ITreasury {
+  function depositToken(address token) external payable;
+}
+
 
 contract XVault is ERC20 {
   using SafeERC20 for ERC20;
@@ -52,18 +56,20 @@ contract XVault is ERC20 {
   address[MAXIMUM_STRATEGIES] public withdrawalQueue;
 
   bool public emergencyShutdown;
+  uint256 private apy = 0;
   
   uint256 public depositLimit;  // Limit of totalAssets the vault can hold
   uint256 public debtRatio;
   uint256 public totalDebt;   // Amount of tokens that all strategies have borrowed
   uint256 public lastReport;  // block.timestamp of last report
   uint256 public activation;  // block.timestamp of contract deployment
+  uint256 private lastValuePerShare = 1000000000;
 
-  address public treasury;    // reward contract where governance fees are sent to
+  ITreasury public treasury;    // reward contract where governance fees are sent to
   uint256 public managementFee;
   uint256 public performanceFee;
 
-  event UpdateTreasury(address treasury);
+  event UpdateTreasury(ITreasury treasury);
   event UpdateGuardian(address guardian);
   event UpdateGuestList(address guestList);
   event UpdateDepositLimit(uint256 depositLimit);
@@ -94,7 +100,7 @@ contract XVault is ERC20 {
   constructor(
     address _token,
     address _governance,
-    address _treasury
+    ITreasury _treasury
   ) 
   public ERC20(
     string(abi.encodePacked("xend ", ERC20(_token).name())),
@@ -125,7 +131,7 @@ contract XVault is ERC20 {
   //   symbol = _symbol;
   // }
 
-  function setTreasury(address _treasury) external {
+  function setTreasury(ITreasury _treasury) external {
     require(msg.sender == governance, "!governance");
     treasury = _treasury;
     emit UpdateTreasury(_treasury);
@@ -197,6 +203,10 @@ contract XVault is ERC20 {
     emit EmergencyShutdown(active);
   }
 
+  function getApy() external view returns (uint256) {
+    return apy;
+  }
+
 
   function depositAll() external {
     deposit(token.balanceOf(msg.sender));
@@ -228,14 +238,8 @@ contract XVault is ERC20 {
     uint256 shares = _issueSharesForAmount(msg.sender, amount);
 
     token.safeTransferFrom(msg.sender, address(this), amount);
-    
-    return shares;
-  }
 
-  function harvest(address reserve, uint256 amount) external {
-    require(msg.sender == governance, "!governance");
-    require(reserve != address(token), "token");
-    ERC20(reserve).safeTransfer(governance, amount);
+    return shares;
   }
 
   /**
@@ -458,7 +462,8 @@ contract XVault is ERC20 {
         _transfer(address(this), _strategy, strategist_reward);
       }
       if (balanceOf(address(this)) > 0) {
-        _transfer(address(this), treasury, balanceOf(address(this)));
+        _approve(address(this), address(treasury), balanceOf(address(this)));
+        treasury.depositToken(address(this));
       }
     }
   }
@@ -550,6 +555,20 @@ contract XVault is ERC20 {
       token.transferFrom(msg.sender, address(this), totalAvailable - credit);
     }
     // else (if totalAvailable == credit), it is already balanced so do nothing.
+
+    // Update APY
+    if (totalSupply() == 0) {
+      apy = 0;
+    } else {
+      uint256 valuePerShare = _totalAssets().mul(1000000000).div(totalSupply());
+      if (valuePerShare > lastValuePerShare) {
+        apy = valuePerShare.sub(lastValuePerShare).mul(365 days).div(block.timestamp.sub(lastReport)).mul(1000).div(lastValuePerShare);
+      } else {
+        apy = 0;
+      }
+      lastValuePerShare = valuePerShare;
+    }
+    
 
     // Update reporting time
     strategies[msg.sender].lastReport = block.timestamp;
