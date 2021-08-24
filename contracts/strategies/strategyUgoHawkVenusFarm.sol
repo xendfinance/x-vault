@@ -55,7 +55,7 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
   }
 
   function name() external override view returns (string memory) {
-    return "strategyGenericLevVenusFarm";
+    return "StrategyUgoHawkVenusFarm";
   }
 
   function delegatedAssets() external override pure returns (uint256) {
