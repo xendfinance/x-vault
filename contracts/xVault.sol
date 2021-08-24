@@ -104,7 +104,7 @@ contract XVault is ERC20 {
   ) 
   public ERC20(
     string(abi.encodePacked("xend ", ERC20(_token).name())),
-    string(abi.encodePacked("xv", ERC20(_token).name()))
+    string(abi.encodePacked("xv", ERC20(_token).symbol()))
   ){
 
     token = ERC20(_token);

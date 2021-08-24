@@ -52,6 +52,8 @@ contract('xVault', async([dev, minter, admin, alice, bob]) => {
     this.xVault = await XVault.new(this.usdtContract.options.address, dev, '0x143afc138978Ad681f7C7571858FAAA9D426CecE', {
       from: minter,
     });
+    const vaultName = await this.xVault.symbol();
+    console.log(vaultName);
 
     this.strategy = await Strategy.new(this.xVault.address, this.vUSDTAddress, {
       from: minter
@@ -145,68 +147,68 @@ contract('xVault', async([dev, minter, admin, alice, bob]) => {
     const balanceBefore = await this.usdtContract.methods.balanceOf(alice).call();
     console.log('balanceBefore:', balanceBefore);
 
-    await this.xVault.addStrategy(this.strategy.address, '50', '50000000000000000', '0');
-    // await report(this.xVault, this.strategy);
+    // await this.xVault.addStrategy(this.strategy.address, '50', '50000000000000000', '0');
+    // // await report(this.xVault, this.strategy);
     
-    const depositedAmount = '100000000000000000000000';
+    // const depositedAmount = '100000000000000000000000';
     
-    this.usdtContract.methods.approve(this.xVault.address, depositedAmount.toString()).send({
-      from: alice
-    });
+    // this.usdtContract.methods.approve(this.xVault.address, depositedAmount.toString()).send({
+    //   from: alice
+    // });
 
-    let apy = await this.xVault.getApy();
-    console.log('apy:', apy.toString());
+    // let apy = await this.xVault.getApy();
+    // console.log('apy:', apy.toString());
 
-    await this.xVault.deposit(depositedAmount.toString(), {
-      from: alice
-    });
+    // await this.xVault.deposit(depositedAmount.toString(), {
+    //   from: alice
+    // });
 
-    await time.increase(time.duration.days(5));
+    // await time.increase(time.duration.days(5));
 
-    await this.strategy.harvest({
-      from: minter
-    });
+    // await this.strategy.harvest({
+    //   from: minter
+    // });
 
-    this.usdtContract.methods.approve(this.xVault.address, depositedAmount.toString()).send({
-      from: bob
-    });
-    await this.xVault.deposit(depositedAmount.toString(), {
-      from: bob
-    });
+    // this.usdtContract.methods.approve(this.xVault.address, depositedAmount.toString()).send({
+    //   from: bob
+    // });
+    // await this.xVault.deposit(depositedAmount.toString(), {
+    //   from: bob
+    // });
 
-    await time.increase(time.duration.days(5));
-    await this.strategy.harvest({
-      from: minter
-    });
-    await time.increase(time.duration.days(5));
-    // await report(this.xVault, this.strategy);
+    // await time.increase(time.duration.days(5));
+    // await this.strategy.harvest({
+    //   from: minter
+    // });
+    // await time.increase(time.duration.days(5));
+    // // await report(this.xVault, this.strategy);
 
-    for (i = 0; i < 10; i++) {
-      await this.strategy.tend({
-        from: minter
-      });
-      await time.increase(time.duration.days(1));
-    }
+    // for (i = 0; i < 10; i++) {
+    //   await this.strategy.tend({
+    //     from: minter
+    //   });
+    //   await time.increase(time.duration.days(1));
+    // }
 
-    await this.strategy.harvest({
-      from: minter
-    });
+    // await this.strategy.harvest({
+    //   from: minter
+    // });
     
+    // // await report(this.xVault, this.strategy);
+
+    // let share = await this.xVault.balanceOf(alice);
+    // await this.xVault.withdraw(share.toString(), alice, 1, {
+    //   from: alice
+    // });
+
+    // apy = await this.xVault.getApy();
+    // console.log('apy:', apy.toString());
+
+    // const balanceAfter = await this.usdtContract.methods.balanceOf(alice).call();
+
+    // share = await this.xVault.balanceOf(alice);
+
     // await report(this.xVault, this.strategy);
-
-    let share = await this.xVault.balanceOf(alice);
-    await this.xVault.withdraw(share.toString(), alice, 1, {
-      from: alice
-    });
-
-    apy = await this.xVault.getApy();
-    console.log('apy:', apy.toString());
-
-    const balanceAfter = await this.usdtContract.methods.balanceOf(alice).call();
-
-    share = await this.xVault.balanceOf(alice);
-
-    await report(this.xVault, this.strategy);
     
   });
 
