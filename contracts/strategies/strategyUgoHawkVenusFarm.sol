@@ -166,9 +166,10 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
   }
 
   /**
-   * Provide a signal to the keeper that harvest should be called.
-   * The keeper will provide the estimated gas cost that they would pay to call
-   * harvest() function.
+   * @notice
+   *  Provide a signal to the keeper that harvest should be called.
+   *  The keeper will provide the estimated gas cost that they would pay to call
+   *  harvest() function.
    */
   function harvestTrigger(uint256 gasCost) public override view returns (bool) {
     StrategyParams memory params = vault.strategies(address(this));
@@ -202,8 +203,10 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
   }
 
   /**
-   * This function makes a prediction on how much xvs is accrued
-   * It is not 100% accurate as it uses current balances in Venus to predict into the past
+   * @notice
+   *  This function makes a prediction on how much xvs is accrued
+   *  It is not 100% accurate as it uses current balances in Venus to predict into the past
+   * @return XVS token amount available to claim
    */
   function predictXvsAccrued() public view returns (uint256) {
     (uint256 deposits, uint256 borrows) = getCurrentPosition();
@@ -322,6 +325,12 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
 
   // adjustPosition is called after report call
   // adjust the position using free available tokens
+  /**
+   * @notice
+   *  adjustPosition is called after report call
+   *  adjust the position using free available tokens
+   * @param _debtOutstanding the amount to withdraw from strategy to vault
+   */
   function adjustPosition(uint256 _debtOutstanding) internal override {
     if (emergencyExit) {
       return;
@@ -361,8 +370,9 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
   }
 
   /**
-   * Input: amount we wanna withdraw and whether 
-   * Return: amount we are able to withdraw 
+   * @notice
+   *  withdraw tokens from venus to adjust position
+   * @param _amount we wanna withdraw and whether 
    */
   function _withdrawSome(uint256 _amount) internal returns (bool notAll) {
     (uint256 position, bool deficit) = _calculateDesiredPosition(_amount, false);
@@ -410,11 +420,12 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
   }
 
   /**
-   * This function calculate the borrow position(the amount to add or remove) based on lending balance.
-   * Input: balance. the amount we're going to deposit or withdraw to venus platform
-   * Input: dep. flag(True/False) to deposit or withdraw
-   * Output: position. the amount we want to change current borrow position
-   * Output: deficit. flag(True/False). if reducing the borrow size, true
+   * @notice
+   *  This function calculate the borrow position(the amount to add or remove) based on lending balance.
+   * @param balance. the amount we're going to deposit or withdraw to venus platform
+   * @param dep. flag(True/False) to deposit or withdraw
+   * @return position the amount we want to change current borrow position
+   * @return deficit flag(True/False). if reducing the borrow size, true
    */
   
   function _calculateDesiredPosition(uint256 balance, bool dep) internal returns(uint256 position, bool deficit) {
@@ -467,8 +478,11 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
   }
 
   /**
-   * max: the max amount we wanna increase our borrowed balance
-   * returns the amount actually did
+   * @notice
+   *  Three functions covering normal leverage and deleverage situations
+   * @param max the max amount we want to increase our borrowed balance
+   * @param deficit True if we are reducing the position size
+   * @return amount actually did
    */
   function _noFlashLoan(uint256 max, bool deficit) internal returns (uint256 amount) {
     (uint256 lent, uint256 borrowed) = getCurrentPosition();
@@ -487,7 +501,12 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     emit Leverage(max, amount, deficit, address(0));
   }
 
-  // maxDeleverage is how much we want to reduce by
+  /**
+   * @param maxDeleverage how much we want to reduce by
+   * @param lent the amount we lent to the venus
+   * @param borrowed the amount we borrowed from the venus
+   * @param collatRatio collateral ratio of token in venus
+   */
   function _normalDeleverage(
     uint256 maxDeleverage,
     uint256 lent,
@@ -517,7 +536,12 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     }
   }
 
-  // maxLeverage is how much we want to increase by
+  /**
+   * @param maxLeverage how much we want to increase by
+   * @param lent the amount we lent to the venus
+   * @param borrowed the amount we borrowed from the venus
+   * @param collatRatio collateral ratio of token in venus
+   */
   function _normalLeverage(
     uint256 maxLeverage,
     uint256 lent,
@@ -538,6 +562,15 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
   }
 
   //Cream calls this function after doing flash loan
+  /**
+   * @notice
+   *  called by cream flash loan contract
+   * @param sender the address of flash loan caller
+   * @param underlying the address of token we borrowed
+   * @param amount the amount borrowed
+   * @param fee flash loan fee
+   * @param params param data sent when loaning
+   */
   function executeOperation(address sender, address underlying, uint amount, uint fee, bytes calldata params) override external {
     uint currentBalance = IERC20(underlying).balanceOf(address(this));
     require(msg.sender == crWant, "Not Flash Loan Provider");
@@ -549,7 +582,13 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     
   }
 
-  // logic after getting flash-loaned assets, called by executeOperation
+  /**
+   * @notice
+   *  logic after getting flash-loaned assets, called by executeOperation
+   * @param deficit true if redeem, false if borrow
+   * @param amount the amount to borrow
+   * @param repayAmount the amount to repay
+   */
   function _loanLogic(bool deficit, uint256 amount, uint256 repayAmount) internal returns (uint) {
     uint256 bal = want.balanceOf(address(this));
     require(bal >= amount, "Flash loan failed");
@@ -578,6 +617,12 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     }
   }
 
+  /**
+   * @notice
+   *  get the current position of strategy
+   * @return deposits the amount lent
+   * @return borrows the amount borrowed
+   */
   function getLivePosition() public returns (uint256 deposits, uint256 borrows) {
     deposits = vToken.balanceOfUnderlying(address(this));
     borrows = vToken.borrowBalanceStored(address(this));
@@ -605,8 +650,12 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
   }
 
   /**
-   * Liquidate up to _amountNeeded of asset of this strategy's position
-   * irregardless of slippage.
+   * @notice
+   *  Liquidate up to _amountNeeded of asset of this strategy's position
+   *  irregardless of slippage.
+   * @param _amountNeeded the amount to liquidate
+   * @return _amountFreed the amount freed
+   * @return _loss the amount lost
    */
   function liquidatePosition(uint256 _amountNeeded) internal override returns (uint256 _amountFreed, uint256 _loss) {
     uint256 _balance = want.balanceOf(address(this));

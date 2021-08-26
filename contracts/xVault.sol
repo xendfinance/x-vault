@@ -208,10 +208,9 @@ contract XVault is ERC20 {
   }
 
 
-  function depositAll() external {
-    deposit(token.balanceOf(msg.sender));
-  }
-
+  /**
+   * Issues `amount` Vault shares to `to`.
+   */
   function _issueSharesForAmount(address to, uint256 amount) internal returns (uint256) {
     uint256 shares = 0;
     if (totalSupply() > 0) {
@@ -226,6 +225,10 @@ contract XVault is ERC20 {
     return shares;
   }
 
+  /**
+   * Deposit `_amount` issuing shares to `msg.sender`.
+   * If the vault is in emergency shutdown, deposits will not be accepted and this call will fail.
+   */
   function deposit(uint256 _amount) public returns (uint256) {
     require(emergencyShutdown != true, "in status of Emergency Shutdown");
     uint256 amount = _amount;
@@ -268,6 +271,17 @@ contract XVault is ERC20 {
     }
   }
 
+  /**
+   * Withdraw the `msg.sender`'s tokens from the vault, redeeming amount `_shares`
+   * for an appropriate number of tokens.
+   * @param maxShares
+   *    How many shares to try and redeem for tokens, defaults to all.
+   * @param recipient
+   *    The address to issue the shares in this Vault to, defaults to the caller's address
+   * @param maxLoss
+   *    The maximum acceptble loss to sustain on withdrawal, defaults to 0%.
+   * @return The quantity of tokens redeemed for `_shares`.
+   */
   function withdraw(
     uint256 maxShare,
     address recipient,
@@ -277,6 +291,10 @@ contract XVault is ERC20 {
     if (maxShare == 0) {
       shares = balanceOf(msg.sender);
     }
+    if (recipient == address(0)) {
+      recipient = msg.sender;
+    }
+
     require(shares <= balanceOf(msg.sender), "share should be smaller than their own");
     
     uint256 value = _shareValue(shares);
@@ -328,6 +346,19 @@ contract XVault is ERC20 {
     return value;
   }
 
+  /**
+   * @notice
+   *    Add a Strategy to the Vault.
+   *    This may only be called by governance.
+   * @param _strategy
+   *    The address of Strategy to add
+   * @param _debtRatio
+   *    The ratio of total assets in the Vault that strategy can manage
+   * @param _rateLimit
+   *    Limit on the increase of debt per unit time since last harvest
+   * @param _performanceFee
+   *    The fee the strategist will receive based on this Vault's performance.
+   */
   function addStrategy(address _strategy, uint256 _debtRatio, uint256 _rateLimit, uint256 _performanceFee) public {
     require(_strategy != address(0), "strategy address can't be zero");
     require(msg.sender == governance, "caller must be governance");
@@ -354,6 +385,12 @@ contract XVault is ERC20 {
 
   }
 
+  /**
+   * @notice
+   *    Remove `strategy` from `withdrawalQueue`
+   *    This may only be called by governance or management.
+   * @param strategy The Strategy to remove
+   */
   function removeStrategyFromQueue(address strategy) external {
     require(msg.sender == management || msg.sender == governance);
     
@@ -368,6 +405,12 @@ contract XVault is ERC20 {
     }
   }
 
+  /**
+   * @notice
+   *    Revoke a Strategy, setting its debt limit to 0 and preventing any future deposits.
+   *    This may only be called by governance, the guardian, or the Strategy itself.
+   * @param strategy The strategy to revoke
+   */
   function revokeStrategy(address _strategy) public {
     require(msg.sender == _strategy || msg.sender == governance || msg.sender == guardian, "should be one of 3 admins");
     _revokeStrategy(_strategy);
@@ -378,6 +421,13 @@ contract XVault is ERC20 {
     emit StrategyRevoked(_strategy);
   }
 
+  /**
+   * @notice
+   *    Provide an accurate expected value for the return this `strategy`
+   * @param strategy The Strategy to determine the expected return for. Defaults to caller.
+   * @return
+   *    The anticipated amount `strategy` should make on its investment since its last report.
+   */
   function expectedReturn(address _strategy) external view returns (uint256) {
     _expectedReturn(_strategy);
   }
@@ -409,6 +459,10 @@ contract XVault is ERC20 {
     }
   }
 
+  /**
+   * @notice Gives the price for a single Vault share.
+   * @return The value of a single share.
+   */
   function pricePerShare() external view returns (uint256) {
     if (totalSupply() == 0) {
       return 10 ** decimals();      // price of 1:1
@@ -419,7 +473,10 @@ contract XVault is ERC20 {
 
   /**
    * @notice
-   * returns token amount to withdraw from the strategy
+   *    Determines if `strategy` is past its debt limit and if any tokens
+   *    should be withdrawn to the Vault.
+   * @param strategy The Strategy to check. Defaults to the caller.
+   * @return The quantity of tokens to withdraw.
    */
   function debtOutstanding(address _strategy) external view returns (uint256) {
     return _debtOutstanding(_strategy);
@@ -480,6 +537,15 @@ contract XVault is ERC20 {
     strategies[_strategy].debtRatio = _debtRatio.sub(_min(loss.mul(MAX_BPS).div(_totalAssets()), _debtRatio));     // reduce debtRatio if loss happens
   }
 
+  /**
+   * @notice
+   *    Amount of tokens in Vault a Strategy has access to as a credit line.
+   *    This will check the Strategy's debt limit, as well as the tokens
+   *    available in the Vault, and determine the maximum amount of tokens
+   *    (if any) the Strategy may draw on.
+   * @param _strategy The Strategy to check. Defaults to caller.
+   * @return The quantity of tokens available for the Strategy to draw on.
+   */
   function creditAvailable(address _strategy) external view returns (uint256) {
     return _creditAvailable(_strategy);
   }
@@ -515,9 +581,19 @@ contract XVault is ERC20 {
   }
 
   /**
-   * Reports the amount of assets the calling Strategy has free
-   * The performance fee, strategist's fee are determined here
-   * Returns outstanding debt
+   * @notice
+   *    Reports the amount of assets the calling Strategy has free
+   *    The performance fee, strategist's fee are determined here
+   *    Returns outstanding debt
+   * @param gain
+   *    Amount Strategy has realized as a gain on it's investment since its
+   *    last report, and is free to be given back to Vault as earnings
+   * @param loss
+   *    Amount Strategy has realized as a loss on it's investment since its
+   *    last report, and should be accounted for on the Vault's balance sheet
+   * @param _debtPayment
+   *    Amount Strategy has made available to cover outstanding debt
+   * @return Amount of debt outstanding (if totalDebt > debtLimit or emergency shutdown).
    */
   function report(uint256 gain, uint256 loss, uint256 _debtPayment) external returns (uint256) {
     require(strategies[msg.sender].activation > 0, "strategy should be active");
