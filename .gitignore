@@ -2,7 +2,7 @@
 /.idea/
 /secrets.json
 /scripts/
-/migrations/
+# /migrations/
 /build/
 
 /accounts.json
