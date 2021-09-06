@@ -6,7 +6,7 @@
 /build/
 
 /accounts.json
-/truffle-config.js
+# /truffle-config.js
 .env
 run-ganache.sh
 /flattens
