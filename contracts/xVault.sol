@@ -145,11 +145,6 @@ contract XVault is ERC20 {
     return token.balanceOf(address(this));
   }
 
-  function setMin(uint256 _min) external {
-    require(msg.sender == governance, "!governance");
-    min = _min;
-  }
-
   function setGovernance(address _governance) external {
     require(msg.sender == governance, "!governance");
     governance = _governance;
