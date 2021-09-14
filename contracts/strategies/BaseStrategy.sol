@@ -3,6 +3,7 @@ pragma solidity 0.6.12;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
+import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "../interfaces/VaultAPI.sol";
 
 /**
@@ -20,6 +21,7 @@ import "../interfaces/VaultAPI.sol";
  */
 abstract contract BaseStrategy {
   using SafeMath for uint256;
+  using SafeERC20 for IERC20;
   
   function apiVersion() public pure returns (string memory) {
     return '0.1.0';
@@ -270,7 +272,7 @@ abstract contract BaseStrategy {
     require(msg.sender == address(vault), "!vault");
     uint256 amountFreed;
     (amountFreed, _loss) = liquidatePosition(_amountNeeded);
-    want.transfer(msg.sender, amountFreed);
+    want.safeTransfer(msg.sender, amountFreed);
   }
 
   /**
@@ -288,7 +290,7 @@ abstract contract BaseStrategy {
     require(msg.sender == address(vault) || msg.sender == governance());
     require(BaseStrategy(_newStrategy).vault() == vault);
     prepareMigration(_newStrategy);
-    want.transfer(_newStrategy, want.balanceOf(address(this)));
+    want.safeTransfer(_newStrategy, want.balanceOf(address(this)));
   }
 
   /**
@@ -314,7 +316,7 @@ abstract contract BaseStrategy {
     address[] memory _protectedTokens = protectedTokens();
     for (uint256 i; i < _protectedTokens.length; i++) require(_token != _protectedTokens[i], "!protected");
 
-    IERC20(_token).transfer(governance(), IERC20(_token).balanceOf(address(this)));
+    IERC20(_token).safeTransfer(governance(), IERC20(_token).balanceOf(address(this)));
   }
 
   function setProfitFactor(uint256 _profitFactor) external onlyAuthorized {
