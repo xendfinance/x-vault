@@ -578,7 +578,7 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     (bool deficit, ) = abi.decode(params, (bool, uint256));
 
     _loanLogic(deficit, amount, amount + fee);
-    IERC20(underlying).transfer(crWant, amount + fee);
+    IERC20(underlying).safeTransfer(crWant, amount + fee);
     
   }
 
