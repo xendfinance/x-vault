@@ -267,12 +267,9 @@ contract XVault is ERC20 {
   /**
    * Withdraw the `msg.sender`'s tokens from the vault, redeeming amount `_shares`
    * for an appropriate number of tokens.
-   * @param maxShares
-   *    How many shares to try and redeem for tokens, defaults to all.
-   * @param recipient
-   *    The address to issue the shares in this Vault to, defaults to the caller's address
-   * @param maxLoss
-   *    The maximum acceptble loss to sustain on withdrawal, defaults to 0%.
+   * @param maxShare How many shares to try and redeem for tokens, defaults to all.
+   * @param recipient The address to issue the shares in this Vault to, defaults to the caller's address
+   * @param maxLoss The maximum acceptble loss to sustain on withdrawal, defaults to 0%.
    * @return The quantity of tokens redeemed for `_shares`.
    */
   function withdraw(
@@ -343,14 +340,10 @@ contract XVault is ERC20 {
    * @notice
    *    Add a Strategy to the Vault.
    *    This may only be called by governance.
-   * @param _strategy
-   *    The address of Strategy to add
-   * @param _debtRatio
-   *    The ratio of total assets in the Vault that strategy can manage
-   * @param _rateLimit
-   *    Limit on the increase of debt per unit time since last harvest
-   * @param _performanceFee
-   *    The fee the strategist will receive based on this Vault's performance.
+   * @param _strategy The address of Strategy to add
+   * @param _debtRatio The ratio of total assets in the Vault that strategy can manage
+   * @param _rateLimit Limit on the increase of debt per unit time since last harvest
+   * @param _performanceFee The fee the strategist will receive based on this Vault's performance.
    */
   function addStrategy(address _strategy, uint256 _debtRatio, uint256 _rateLimit, uint256 _performanceFee) public {
     require(_strategy != address(0), "strategy address can't be zero");
@@ -402,7 +395,7 @@ contract XVault is ERC20 {
    * @notice
    *    Revoke a Strategy, setting its debt limit to 0 and preventing any future deposits.
    *    This may only be called by governance, the guardian, or the Strategy itself.
-   * @param strategy The strategy to revoke
+   * @param _strategy The strategy to revoke
    */
   function revokeStrategy(address _strategy) public {
     require(msg.sender == _strategy || msg.sender == governance || msg.sender == guardian, "should be one of 3 admins");
@@ -417,7 +410,7 @@ contract XVault is ERC20 {
   /**
    * @notice
    *    Provide an accurate expected value for the return this `strategy`
-   * @param strategy The Strategy to determine the expected return for. Defaults to caller.
+   * @param _strategy The Strategy to determine the expected return for. Defaults to caller.
    * @return
    *    The anticipated amount `strategy` should make on its investment since its last report.
    */
@@ -468,7 +461,7 @@ contract XVault is ERC20 {
    * @notice
    *    Determines if `strategy` is past its debt limit and if any tokens
    *    should be withdrawn to the Vault.
-   * @param strategy The Strategy to check. Defaults to the caller.
+   * @param _strategy The Strategy to check. Defaults to the caller.
    * @return The quantity of tokens to withdraw.
    */
   function debtOutstanding(address _strategy) external view returns (uint256) {
@@ -578,14 +571,11 @@ contract XVault is ERC20 {
    *    Reports the amount of assets the calling Strategy has free
    *    The performance fee, strategist's fee are determined here
    *    Returns outstanding debt
-   * @param gain
-   *    Amount Strategy has realized as a gain on it's investment since its
+   * @param gain Amount Strategy has realized as a gain on it's investment since its
    *    last report, and is free to be given back to Vault as earnings
-   * @param loss
-   *    Amount Strategy has realized as a loss on it's investment since its
+   * @param loss Amount Strategy has realized as a loss on it's investment since its
    *    last report, and should be accounted for on the Vault's balance sheet
-   * @param _debtPayment
-   *    Amount Strategy has made available to cover outstanding debt
+   * @param _debtPayment Amount Strategy has made available to cover outstanding debt
    * @return Amount of debt outstanding (if totalDebt > debtLimit or emergency shutdown).
    */
   function report(uint256 gain, uint256 loss, uint256 _debtPayment) external returns (uint256) {
