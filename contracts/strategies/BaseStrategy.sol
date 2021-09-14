@@ -241,6 +241,10 @@ abstract contract BaseStrategy {
    */
 
   function harvest() external onlyKeepers {
+    _harvest();
+  }
+
+  function _harvest() internal {
     uint256 _profit = 0;
     uint256 _loss = 0;
     uint256 _debtOutstanding = vault.debtOutstanding(address(this));
@@ -302,6 +306,7 @@ abstract contract BaseStrategy {
   function setEmergencyExit() external onlyAuthorized {
     emergencyExit = true;
     vault.revokeStrategy();
+    _harvest();
 
     emit EmergencyExitEnabled();
   }
