@@ -46,8 +46,6 @@ contract XVault is ERC20 {
     uint256 totalLoss;
   }
 
-  uint256 public min = 9500;
-  uint256 public constant max = 10000;
   uint256 public MAX_BPS = 100;
   uint256 public SECS_PER_YEAR = 60 * 60 * 24 * 36525 / 100;
 
