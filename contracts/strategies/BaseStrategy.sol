@@ -54,6 +54,8 @@ abstract contract BaseStrategy {
   uint256 public debtThreshold = 0;
 
   bool public emergencyExit;
+
+  mapping (address => bool) public protected;
   
   event Harvested(uint256 profit, uint256 loss, uint256 debtPayment, uint256 debtOutstanding);
   
@@ -311,15 +313,13 @@ abstract contract BaseStrategy {
     emit EmergencyExitEnabled();
   }
 
-  function protectedTokens() internal virtual view returns (address[] memory);
+  function setProtectedTokens() internal virtual;
 
   // Removes tokens from this strategy that are not the type of tokens managed by this strategy
   function sweep(address _token) external onlyGovernance {
     require(_token != address(want), "!want");
     require(_token != address(vault), "!shares");
-
-    address[] memory _protectedTokens = protectedTokens();
-    for (uint256 i; i < _protectedTokens.length; i++) require(_token != _protectedTokens[i], "!protected");
+    require(protected[_token] != true, "!protected");
 
     IERC20(_token).safeTransfer(governance(), IERC20(_token).balanceOf(address(this)));
   }

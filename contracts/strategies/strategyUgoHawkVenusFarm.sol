@@ -684,10 +684,7 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     }
   }
 
-  function protectedTokens() internal override view returns (address[] memory) {
-    address[] memory protected = new address[](0);
-    return protected;
-  }
+  function setProtectedTokens() internal override {}
 
   function _min(uint256 a, uint256 b) internal pure returns (uint256) {
     return a < b ? a : b;
