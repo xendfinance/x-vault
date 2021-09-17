@@ -556,8 +556,8 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     }
     if (leveragedAmount > 10) {
       leveragedAmount = leveragedAmount - 10;
-      vToken.borrow(leveragedAmount);
-      vToken.mint(want.balanceOf(address(this)));
+      require(vToken.borrow(leveragedAmount) == 0, "got collateral?");
+      require(vToken.mint(want.balanceOf(address(this))) == 0, "supply error");
     }
   }
 
