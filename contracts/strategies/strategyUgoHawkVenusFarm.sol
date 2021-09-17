@@ -311,7 +311,7 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     if (balance > debt) {
       _profit = balance - debt;
       if (wantBalance < _profit) {
-        _debtPayment = wantBalance;
+        _profit = wantBalance;
       } else if (wantBalance > _profit.add(_debtOutstanding)) {
         _debtPayment = _debtOutstanding;
       } else {
