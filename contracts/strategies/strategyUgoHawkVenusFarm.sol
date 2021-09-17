@@ -573,6 +573,7 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
    */
   function executeOperation(address sender, address underlying, uint amount, uint fee, bytes calldata params) override external {
     uint currentBalance = IERC20(underlying).balanceOf(address(this));
+    require(sender == address(this), "caller is not this contract");
     require(msg.sender == crWant, "Not Flash Loan Provider");
     require(currentBalance >= amount, "Invalid balance, was the flashloan successful?");
     (bool deficit, ) = abi.decode(params, (bool, uint256));
