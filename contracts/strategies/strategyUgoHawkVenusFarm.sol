@@ -26,7 +26,6 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
   address public constant crWant = address(0xEF6d459FE81C3Ed53d292c936b2df5a8084975De);
 
   uint256 public collateralTarget = 0.73 ether; // 73%
-  uint256 public blocksToLiquidationDangerZone = 46500; // 7 days =  60*60*24*7/13
   uint256 public minWant = 1 ether;
 
   bool public flashLoanActive = true;
@@ -34,7 +33,8 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
   bool public forceMigrate = false;
 
   VBep20I public vToken;
-  uint256 secondsPerBlock = 13;     // roughly 13 seconds per block
+  uint256 immutable secondsPerBlock;     // approx seconds per block
+  uint256 public immutable blocksToLiquidationDangerZone; // 7 days =  60*60*24*7/secondsPerBlock
   uint256 public minXvsToSell = 100000000;
 
   // @notice emitted when trying to do Flash Loan. flashLoan address is 0x00 when no flash loan used
@@ -45,11 +45,13 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     _;
   }
 
-  constructor(address _vault, address _vToken) public BaseStrategy(_vault) {
+  constructor(address _vault, address _vToken, uint8 _secondsPerBlock) public BaseStrategy(_vault) {
     vToken = VBep20I(_vToken);
     want.safeApprove(address(vToken), uint256(-1));
     IERC20(xvs).safeApprove(uniswapRouter, uint256(-1));
     
+    secondsPerBlock = _secondsPerBlock;
+    blocksToLiquidationDangerZone = 60 * 60 * 24 * 7 / _secondsPerBlock;
     maxReportDelay = 3600 * 24;
     profitFactor = 100;
   }
