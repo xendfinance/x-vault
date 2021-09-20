@@ -207,7 +207,7 @@ contract XVault is ERC20 {
   function _issueSharesForAmount(address to, uint256 amount) internal returns (uint256) {
     uint256 shares = 0;
     if (totalSupply() > 0) {
-      shares = amount * totalSupply() / _totalAssets();
+      shares = amount.mul(totalSupply()).div(_totalAssets());
     } else {
       shares = amount;
     }
@@ -226,7 +226,7 @@ contract XVault is ERC20 {
     require(emergencyShutdown != true, "in status of Emergency Shutdown");
     uint256 amount = _amount;
     if (amount == 0) {
-      amount = _min(depositLimit - _totalAssets(), token.balanceOf(msg.sender));
+      amount = _min(depositLimit.sub(_totalAssets()), token.balanceOf(msg.sender));
     }
     
     require(amount > 0, "deposit amount should be bigger than zero");
@@ -243,7 +243,7 @@ contract XVault is ERC20 {
    * i.e. current balance of assets + total assets that strategies borrowed from the vault 
    */
   function _totalAssets() internal view returns (uint256) {
-    return token.balanceOf(address(this)) + totalDebt;
+    return token.balanceOf(address(this)).add(totalDebt);
   }
 
   function totalAssets() external view returns (uint256) {
@@ -252,7 +252,7 @@ contract XVault is ERC20 {
 
   function _shareValue(uint256 _share) internal view returns (uint256) {
     // Determine the current value of `shares`
-    return (_share * _totalAssets()) / totalSupply();
+    return _share.mul(_totalAssets()).div(totalSupply());
   }
 
   function _sharesForAmount(uint256 amount) internal view returns (uint256) {
@@ -301,14 +301,14 @@ contract XVault is ERC20 {
           break;
         }
 
-        uint256 amountNeeded = value - token.balanceOf(address(this));    // recalculate the needed token amount to withdraw
+        uint256 amountNeeded = value.sub(token.balanceOf(address(this)));    // recalculate the needed token amount to withdraw
         amountNeeded = _min(amountNeeded, strategies[strategy].totalDebt);
         if (amountNeeded == 0)
           continue;
         
         uint256 before = token.balanceOf(address(this));
         uint256 loss = Strategy(strategy).withdraw(amountNeeded);
-        uint256 withdrawn = token.balanceOf(address(this)) - before;
+        uint256 withdrawn = token.balanceOf(address(this)).sub(before);
 
         if (loss > 0) {
           value = value.sub(loss);
@@ -472,7 +472,7 @@ contract XVault is ERC20 {
    * Returns assets amount of strategy that is past its debt limit
    */
   function _debtOutstanding(address _strategy) internal view returns (uint256) {
-    uint256 strategy_debtLimit = strategies[_strategy].debtRatio * _totalAssets() / MAX_BPS;
+    uint256 strategy_debtLimit = strategies[_strategy].debtRatio.mul(_totalAssets()).div(MAX_BPS);
     uint256 strategy_totalDebt = strategies[_strategy].totalDebt;
 
     if (emergencyShutdown) {      // if emergency status, return current debt
@@ -480,7 +480,7 @@ contract XVault is ERC20 {
     } else if (strategy_totalDebt <= strategy_debtLimit) {
       return 0;
     } else {
-      return strategy_totalDebt - strategy_debtLimit;
+      return strategy_totalDebt.sub(strategy_debtLimit);
     }
   }
 
@@ -542,10 +542,10 @@ contract XVault is ERC20 {
     }
 
     uint256 vault_totalAssets = _totalAssets();
-    uint256 vault_debtLimit = debtRatio * vault_totalAssets / MAX_BPS;
+    uint256 vault_debtLimit = debtRatio.mul(vault_totalAssets).div(MAX_BPS);
     uint256 vault_totalDebt = totalDebt;
 
-    uint256 strategy_debtLimit = strategies[_strategy].debtRatio * vault_totalAssets / MAX_BPS;
+    uint256 strategy_debtLimit = strategies[_strategy].debtRatio.mul(vault_totalAssets).div(MAX_BPS);
     uint256 strategy_totalDebt = strategies[_strategy].totalDebt;
     uint256 strategy_rateLimit = strategies[_strategy].rateLimit;
     uint256 strategy_lastReport = strategies[_strategy].lastReport;
@@ -554,13 +554,13 @@ contract XVault is ERC20 {
       return 0;
     }
 
-    uint256 _available = strategy_debtLimit - strategy_totalDebt;
-    _available = _min(_available, vault_debtLimit - vault_totalDebt);
+    uint256 _available = strategy_debtLimit.sub(strategy_totalDebt);
+    _available = _min(_available, vault_debtLimit.sub(vault_totalDebt));
 
     // if available token amount is bigger than the limit per report period, adjust it.
-    uint256 delta = block.timestamp - strategy_lastReport;      // time difference between current time and last report(i.e. harvest)
-    if (strategy_rateLimit > 0 && _available >= strategy_rateLimit * delta) {
-      _available = strategy_rateLimit * delta;
+    uint256 delta = block.timestamp.sub(strategy_lastReport);      // time difference between current time and last report(i.e. harvest)
+    if (strategy_rateLimit > 0 && _available >= strategy_rateLimit.mul(delta)) {
+      _available = strategy_rateLimit.mul(delta);
     }
 
     return _min(_available, token.balanceOf(address(this)));
@@ -580,7 +580,7 @@ contract XVault is ERC20 {
    */
   function report(uint256 gain, uint256 loss, uint256 _debtPayment) external returns (uint256) {
     require(strategies[msg.sender].activation > 0, "strategy should be active");
-    require(token.balanceOf(msg.sender) >= gain + _debtPayment, "insufficient token balance of strategy");
+    require(token.balanceOf(msg.sender) >= gain.add(_debtPayment), "insufficient token balance of strategy");
 
     if (loss > 0) {
       _reportLoss(msg.sender, loss);
@@ -603,15 +603,15 @@ contract XVault is ERC20 {
     uint256 credit = _creditAvailable(msg.sender);
 
     if (credit > 0) {
-      strategies[msg.sender].totalDebt = strategies[msg.sender].totalDebt + credit;
-      totalDebt = totalDebt + credit;
+      strategies[msg.sender].totalDebt = strategies[msg.sender].totalDebt.add(credit);
+      totalDebt = totalDebt.add(credit);
     }
 
-    uint256 totalAvailable = gain + debtPayment;
+    uint256 totalAvailable = gain.add(debtPayment);
     if (totalAvailable < credit) {
-      token.transfer(msg.sender, credit - totalAvailable);
+      token.transfer(msg.sender, credit.sub(totalAvailable));
     } else if (totalAvailable > credit) {
-      token.transferFrom(msg.sender, address(this), totalAvailable - credit);
+      token.transferFrom(msg.sender, address(this), totalAvailable.sub(credit));
     }
     // else (if totalAvailable == credit), it is already balanced so do nothing.
 
