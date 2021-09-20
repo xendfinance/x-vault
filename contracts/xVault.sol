@@ -517,10 +517,11 @@ contract XVault is ERC20 {
 
     strategies[_strategy].totalLoss = strategies[_strategy].totalLoss.add(loss);
     strategies[_strategy].totalDebt = _totalDebt.sub(loss);
-    totalDebt = totalDebt.sub(loss);
 
     uint256 _debtRatio = strategies[_strategy].debtRatio;
     strategies[_strategy].debtRatio = _debtRatio.sub(_min(loss.mul(MAX_BPS).div(_totalAssets()), _debtRatio));     // reduce debtRatio if loss happens
+
+    totalDebt = totalDebt.sub(loss);
   }
 
   /**
