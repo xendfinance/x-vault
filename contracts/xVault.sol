@@ -56,6 +56,7 @@ contract XVault is ERC20 {
   bool public emergencyShutdown;
   uint256 private apy = 0;
   
+  uint256 private tokenBalance; // token.balanceOf(address(this))
   uint256 public depositLimit;  // Limit of totalAssets the vault can hold
   uint256 public debtRatio;
   uint256 public totalDebt;   // Amount of tokens that all strategies have borrowed
@@ -234,6 +235,7 @@ contract XVault is ERC20 {
     uint256 shares = _issueSharesForAmount(msg.sender, amount);
 
     token.safeTransferFrom(msg.sender, address(this), amount);
+    tokenBalance = tokenBalance.add(amount);
 
     return shares;
   }
@@ -243,7 +245,7 @@ contract XVault is ERC20 {
    * i.e. current balance of assets + total assets that strategies borrowed from the vault 
    */
   function _totalAssets() internal view returns (uint256) {
-    return token.balanceOf(address(this)).add(totalDebt);
+    return tokenBalance.add(totalDebt);
   }
 
   function totalAssets() external view returns (uint256) {
@@ -332,6 +334,7 @@ contract XVault is ERC20 {
     emit Transfer(msg.sender, address(0), shares);
     
     token.safeTransfer(recipient, value);
+    tokenBalance = tokenBalance.sub(value);
     
     return value;
   }
@@ -612,8 +615,10 @@ contract XVault is ERC20 {
     uint256 totalAvailable = gain.add(debtPayment);
     if (totalAvailable < credit) {
       token.transfer(msg.sender, credit.sub(totalAvailable));
+      tokenBalance = tokenBalance.sub(credit.sub(totalAvailable));
     } else if (totalAvailable > credit) {
       token.transferFrom(msg.sender, address(this), totalAvailable.sub(credit));
+      tokenBalance = tokenBalance.add(totalAvailable.sub(credit));
     }
     // else (if totalAvailable == credit), it is already balanced so do nothing.
 
