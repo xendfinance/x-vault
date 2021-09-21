@@ -187,7 +187,8 @@ contract XVault is ERC20 {
       2. can't add new strategy
       3. only governance can undo Emergency Shutdown
     */
-
+    require(active != emergencyShutdown, "already active/inactive status");
+    
     if (active) {
       require(msg.sender == guardian || msg.sender == governance, "caller must be guardian or governance");
     } else {
