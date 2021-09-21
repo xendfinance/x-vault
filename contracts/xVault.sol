@@ -650,7 +650,7 @@ contract XVault is ERC20 {
       // this block is used for getting penny
       // if Strategy is rovoked or exited for emergency, it could have some token that wan't withdrawn
       // this is different from debt
-      Strategy(msg.sender).estimateTotalAssets();
+      return Strategy(msg.sender).estimateTotalAssets();
     } else {
       return debt;
     }
