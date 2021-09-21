@@ -51,7 +51,7 @@ contract XVault is ERC20 {
 
   mapping (address => StrategyParams) public strategies;
   uint256 constant MAXIMUM_STRATEGIES = 20;
-  address[MAXIMUM_STRATEGIES] public withdrawalQueue;
+  address[] public withdrawalQueue;
 
   bool public emergencyShutdown;
   uint256 private apy = 0;
@@ -368,9 +368,7 @@ contract XVault is ERC20 {
     
     emit StrategyAdded(_strategy, _debtRatio, _rateLimit, _performanceFee);
 
-    require(withdrawalQueue[MAXIMUM_STRATEGIES - 1] == address(0));
-    withdrawalQueue[MAXIMUM_STRATEGIES - 1] = _strategy;
-    _organizeWithdrawalQueue();
+    withdrawalQueue.push(_strategy);
 
   }
 
@@ -378,17 +376,17 @@ contract XVault is ERC20 {
    * @notice
    *    Remove `strategy` from `withdrawalQueue`
    *    This may only be called by governance or management.
-   * @param strategy The Strategy to remove
+   * @param _strategy The Strategy to remove
    */
-  function removeStrategyFromQueue(address strategy) external {
+  function removeStrategyFromQueue(address _strategy) external {
     require(msg.sender == management || msg.sender == governance);
     
-    for (uint i = 0; i < MAXIMUM_STRATEGIES; i++) {
+    for (uint i = 0; i < withdrawalQueue.length; i++) {
       
-      if (withdrawalQueue[i] == strategy) {
-        withdrawalQueue[i] = address(0);
-        _organizeWithdrawalQueue();
-        emit StrategyRemovedFromQueue(strategy);
+      if (withdrawalQueue[i] == _strategy) {
+        withdrawalQueue[i] = withdrawalQueue[withdrawalQueue.length - 1];
+        withdrawalQueue.pop();
+        emit StrategyRemovedFromQueue(_strategy);
       }
     
     }
@@ -427,24 +425,6 @@ contract XVault is ERC20 {
       return strategies[_strategy].totalGain.mul(delta).div(block.timestamp - strategies[_strategy].activation);
     } else {
       return 0;
-    }
-  }
-
-  function _organizeWithdrawalQueue() internal {
-    /* 
-      Reorganize `withdrawalQueue` to replace empty value by the later value if there is empty value between 
-      two actual value
-    */
-    uint256 offset = 0;
-    for (uint i = 0; i < MAXIMUM_STRATEGIES; i++) {
-      address strategy = withdrawalQueue[i];
-
-      if (strategy == address(0)) {
-        offset = offset + 1;
-      } else if (offset > 0) {
-        withdrawalQueue[i - offset] = strategy;
-        withdrawalQueue[i] = address(0);
-      }
     }
   }
 
