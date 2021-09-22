@@ -195,9 +195,7 @@ abstract contract BaseStrategy {
     }
   }
 
-  function tendTrigger(uint256 callCost) public virtual view returns (bool) {
-    return false;
-  }
+  function tendTrigger(uint256 callCost) public virtual view returns (bool);
 
   /**
    * @notice
