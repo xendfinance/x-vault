@@ -215,7 +215,6 @@ contract XVault is ERC20 {
     }
 
     _mint(to, shares);
-    emit Transfer(address(0), to, shares);
 
     return shares;
   }
@@ -330,8 +329,6 @@ contract XVault is ERC20 {
     }
     
     _burn(msg.sender, shares);
-
-    emit Transfer(msg.sender, address(0), shares);
     
     token.safeTransfer(recipient, value);
     tokenBalance = tokenBalance.sub(value);
