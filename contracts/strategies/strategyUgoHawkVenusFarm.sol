@@ -577,7 +577,6 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     uint currentBalance = IERC20(underlying).balanceOf(address(this));
     require(sender == address(this), "caller is not this contract");
     require(msg.sender == crWant, "Not Flash Loan Provider");
-    require(currentBalance >= amount, "Invalid balance, was the flashloan successful?");
     (bool deficit, ) = abi.decode(params, (bool, uint256));
 
     _loanLogic(deficit, amount, amount + fee);
@@ -594,7 +593,7 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
    */
   function _loanLogic(bool deficit, uint256 amount, uint256 repayAmount) internal returns (uint) {
     uint256 bal = want.balanceOf(address(this));
-    require(bal >= amount, "Flash loan failed");
+    require(bal >= amount, "Invalid balance, was the flashloan successful?");
 
     if (deficit) {
       vToken.repayBorrow(amount);
