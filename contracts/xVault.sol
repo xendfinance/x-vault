@@ -31,7 +31,7 @@ contract XVault is ERC20 {
   address public guardian;
   address public governance;
   address public management;
-  ERC20 public token;
+  ERC20 public immutable token;
 
   // GuestList guestList;
 
@@ -61,7 +61,7 @@ contract XVault is ERC20 {
   uint256 public debtRatio;
   uint256 public totalDebt;   // Amount of tokens that all strategies have borrowed
   uint256 public lastReport;  // block.timestamp of last report
-  uint256 public activation;  // block.timestamp of contract deployment
+  uint256 public immutable activation;  // block.timestamp of contract deployment
   uint256 private lastValuePerShare = 1000000000;
 
   ITreasury public treasury;    // reward contract where governance fees are sent to
@@ -70,6 +70,7 @@ contract XVault is ERC20 {
 
   event UpdateTreasury(ITreasury treasury);
   event UpdateGuardian(address guardian);
+  event UpdateManagement(address management);
   event UpdateGuestList(address guestList);
   event UpdateDepositLimit(uint256 depositLimit);
   event UpdatePerformanceFee(uint256 fee);
@@ -151,6 +152,12 @@ contract XVault is ERC20 {
     governance = _governance;
   }
 
+  function setManagement(address _management) external {
+    require(msg.sender == governance, "!governance");
+    management = _management;
+    emit UpdateManagement(_management);
+  }
+
   // function setGuestList(address _guestList) external {
   //   require(msg.sender == governance, "!governance");
   //   guestList = GuestList(_guestList);
@@ -190,7 +197,7 @@ contract XVault is ERC20 {
     require(active != emergencyShutdown, "already active/inactive status");
     
     require(msg.sender == governance || (active && msg.sender == guardian), "caller must be guardian or governance");
-    
+
     emergencyShutdown = active;
     emit EmergencyShutdown(active);
   }
