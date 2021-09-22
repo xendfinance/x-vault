@@ -33,14 +33,14 @@ abstract contract BaseStrategy {
     return 0;
   }
 
-  VaultAPI public vault;
+  VaultAPI public immutable vault;
   
   address public strategist;
   address public rewards;
   address public keeper;
 
 
-  IERC20 public want;
+  IERC20 public immutable want;
 
   // The maximum number of seconds between harvest calls.
   uint256 public maxReportDelay = 86400;    // once a day
