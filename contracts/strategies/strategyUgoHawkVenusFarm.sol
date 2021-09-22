@@ -399,7 +399,7 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
 
     uint256 reservedAmount = 0;
     if (tempColla == 0) {
-      tempColla = 1e15;
+      tempColla = 1e15;   // 0.001 * 1e18. minimum collateralTarget
     }
 
     reservedAmount = borrowBalance.mul(1e18).div(tempColla);
