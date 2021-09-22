@@ -401,6 +401,7 @@ contract XVault is ERC20 {
   }
 
   function _revokeStrategy(address _strategy) internal {
+    debtRatio = debtRatio.sub(strategies[_strategy].debtRatio);
     strategies[_strategy].debtRatio = 0;
     emit StrategyRevoked(_strategy);
   }
