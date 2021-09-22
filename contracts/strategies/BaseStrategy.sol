@@ -274,9 +274,8 @@ abstract contract BaseStrategy {
   }
 
   // withdraw assets to the vault
-  function withdraw(uint256 _amountNeeded) external returns (uint256 _loss) {
+  function withdraw(uint256 _amountNeeded) external returns (uint256 amountFreed, uint256 _loss) {
     require(msg.sender == address(vault), "!vault");
-    uint256 amountFreed;
     (amountFreed, _loss) = liquidatePosition(_amountNeeded);
     want.safeTransfer(msg.sender, amountFreed);
   }

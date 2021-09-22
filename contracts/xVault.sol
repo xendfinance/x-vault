@@ -14,7 +14,7 @@ interface Strategy {
   function want() external view returns (address);
   function vault() external view returns (address);
   function estimateTotalAssets() external view returns (uint256);
-  function withdraw(uint256 _amount) external returns (uint256);
+  function withdraw(uint256 _amount) external returns (uint256, uint256);
   function migrate(address _newStrategy) external;
 }
 
@@ -309,9 +309,8 @@ contract XVault is ERC20 {
         if (amountNeeded == 0)
           continue;
         
-        uint256 before = token.balanceOf(address(this));
-        uint256 loss = Strategy(strategy).withdraw(amountNeeded);
-        uint256 withdrawn = token.balanceOf(address(this)).sub(before);
+        (uint256 withdrawn, uint256 loss) = Strategy(strategy).withdraw(amountNeeded);
+        tokenBalance = tokenBalance.add(withdrawn);
 
         if (loss > 0) {
           value = value.sub(loss);
