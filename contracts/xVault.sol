@@ -189,11 +189,8 @@ contract XVault is ERC20 {
     */
     require(active != emergencyShutdown, "already active/inactive status");
     
-    if (active) {
-      require(msg.sender == guardian || msg.sender == governance, "caller must be guardian or governance");
-    } else {
-      require(msg.sender == governance, "caller must be governance");
-    }
+    require(msg.sender == governance || (active && msg.sender == guardian), "caller must be guardian or governance");
+    
     emergencyShutdown = active;
     emit EmergencyShutdown(active);
   }
