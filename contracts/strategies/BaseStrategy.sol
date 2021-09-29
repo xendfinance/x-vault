@@ -316,7 +316,7 @@ abstract contract BaseStrategy {
   function sweep(address _token) external onlyGovernance {
     require(_token != address(want), "!want");
     require(_token != address(vault), "!shares");
-    require(protected[_token] != true, "!protected");
+    require(!protected[_token], "!protected");
 
     IERC20(_token).safeTransfer(governance(), IERC20(_token).balanceOf(address(this)));
   }
