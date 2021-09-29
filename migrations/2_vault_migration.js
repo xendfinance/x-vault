@@ -19,9 +19,10 @@ const adminAddress = '0xefdca55e4bce6c1d535cb2d0687b5567eef2ae83';
 
 const XVault = artifacts.require("XVault");
 const Strategy = artifacts.require("Strategy");
+const secondsPerBlock = 3;
 
 module.exports = function (deployer) {
     deployer.deploy(XVault, usdtAddress, adminAddress, adminAddress).then(function () {
-      return deployer.deploy(Strategy, XVault.address, vUsdtAddress)
+      return deployer.deploy(Strategy, XVault.address, vUsdtAddress, secondsPerBlock)
     });
 };
