@@ -310,9 +310,11 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
 
     uint256 debt = vault.strategies(address(this)).totalDebt; 
 
+    // `balance` - `total debt` is profit
     if (balance > debt) {
       _profit = balance - debt;
       if (wantBalance < _profit) {
+        // all reserve is profit in case `profit` is greater than `wantBalance`
         _profit = wantBalance;
       } else if (wantBalance > _profit.add(_debtOutstanding)) {
         _debtPayment = _debtOutstanding;
