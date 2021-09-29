@@ -304,8 +304,9 @@ abstract contract BaseStrategy {
 
   function setEmergencyExit() external onlyAuthorized {
     emergencyExit = true;
+    (uint256 amountFreed, ) = liquidatePosition(uint(-1));
+    want.safeTransfer(address(vault), amountFreed);
     vault.revokeStrategy();
-    _harvest();
 
     emit EmergencyExitEnabled();
   }
