@@ -40,10 +40,10 @@ contract XVault is ERC20 {
     uint256 activation;         // block.timstamp of activation of strategy
     uint256 debtRatio;          // percentage of maximum token amount of total assets that strategy can borrow from the vault
     uint256 rateLimit;          // limit rate per unit time, it controls the amount of token strategy can borrow last harvest
-    uint256 lastReport;
+    uint256 lastReport;         // block.timestamp of the last time a report occured
     uint256 totalDebt;          // total outstanding debt that strategy has
-    uint256 totalGain;
-    uint256 totalLoss;
+    uint256 totalGain;          // Total returns that Strategy has realized for Vault
+    uint256 totalLoss;          // Total losses that Strategy has realized for Vault
   }
 
   uint256 public MAX_BPS = 100;
