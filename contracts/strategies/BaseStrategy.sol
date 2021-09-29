@@ -33,14 +33,14 @@ abstract contract BaseStrategy {
     return 0;
   }
 
-  VaultAPI public vault;
+  VaultAPI public immutable vault;
   
   address public strategist;
   address public rewards;
   address public keeper;
 
 
-  IERC20 public want;
+  IERC20 public immutable want;
 
   // The maximum number of seconds between harvest calls.
   uint256 public maxReportDelay = 86400;    // once a day
@@ -95,8 +95,8 @@ abstract contract BaseStrategy {
 
   constructor(address _vault) public {
     vault = VaultAPI(_vault);
-    want = IERC20(vault.token());
-    want.approve(_vault, uint256(-1));
+    want = IERC20(VaultAPI(_vault).token());
+    IERC20(VaultAPI(_vault).token()).safeApprove(_vault, uint256(-1));
     strategist = msg.sender;
     rewards = msg.sender;
     keeper = msg.sender;

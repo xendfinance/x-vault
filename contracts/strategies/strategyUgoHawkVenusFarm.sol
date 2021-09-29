@@ -47,7 +47,7 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
 
   constructor(address _vault, address _vToken, uint8 _secondsPerBlock) public BaseStrategy(_vault) {
     vToken = VBep20I(_vToken);
-    want.safeApprove(address(vToken), uint256(-1));
+    IERC20(VaultAPI(_vault).token()).safeApprove(address(vToken), uint256(-1));
     IERC20(xvs).safeApprove(uniswapRouter, uint256(-1));
     
     secondsPerBlock = _secondsPerBlock;
