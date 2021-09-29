@@ -173,7 +173,7 @@ contract XVault is ERC20 {
 
   function setPerformanceFee(uint256 fee) external {
     require(msg.sender == governance, "!governance");
-    require(fee < MAX_BPS, "performance fee should be smaller than ...");
+    require(fee <= MAX_BPS - performanceFee, "performance fee should be smaller than ...");
     performanceFee = fee;
     emit UpdatePerformanceFee(fee);
   }
