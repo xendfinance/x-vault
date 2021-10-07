@@ -438,9 +438,9 @@ contract XVault is ERC20 {
   function pricePerShare() external view returns (uint256) {
     if (totalSupply() == 0) {
       // return 10 ** decimals();      // price of 1:1
-      return _totalAssets() > 10 ** decimals() ? _totalAssets() : 10 ** decimals();
+      return _totalAssets() > (uint256(10) ** decimals()) ? _totalAssets() : uint256(10) ** decimals();
     } else {
-      return _shareValue(10 ** decimals());
+      return _shareValue(uint256(10) ** decimals());
     }
   }
 
