@@ -93,6 +93,18 @@ contract XVault is ERC20 {
     uint256 rateLimit,
     uint256 performanceFee
   );
+  event StrategyUpdateDebtRatio(
+    address indexed strategy, 
+    uint256 debtRatio
+  );
+  event StrategyUpdateRateLimit(
+    address indexed strategy,
+    uint256 rateLimit
+  );
+  event StrategyUpdatePerformanceFee(
+    address indexed strategy,
+    uint256 performanceFee
+  );
   event StrategyRevoked(
     address indexed strategy
   );
@@ -271,6 +283,25 @@ contract XVault is ERC20 {
   }
 
   /**
+   * @notice
+   *    Determines the total quantity of shares this Vault can provide,
+   *    factoring in assets currently residing in the Vault, as well as those deployed to strategies.
+   * @dev
+   *    If you want to calculate the maximum a user could withdraw up to, need to use this function
+   * @return The total quantity of shares this Vault can provide
+   */
+  function maxAvailableShares() external view returns (uint256) {
+    uint256 _shares = _sharesForAmount(token.balanceOf(address(this)));
+
+    for (uint i = 0; i < withdrawalQueue.length; i++) {
+      if (withdrawalQueue[i] == address(0)) break;
+      _shares = _shares.add(_sharesForAmount(strategies[withdrawalQueue[i]].totalDebt));
+    }
+
+    return _shares;
+  }
+
+  /**
    * Withdraw the `msg.sender`'s tokens from the vault, redeeming amount `_shares`
    * for an appropriate number of tokens.
    * @param maxShare How many shares to try and redeem for tokens, defaults to all.
@@ -351,8 +382,13 @@ contract XVault is ERC20 {
    */
   function addStrategy(address _strategy, uint256 _debtRatio, uint256 _rateLimit, uint256 _performanceFee) public {
     require(_strategy != address(0), "strategy address can't be zero");
+    assert(!emergencyShutdown);
     require(msg.sender == governance, "caller must be governance");
     require(_performanceFee <= MAX_BPS - performanceFee, "performance fee should be smaller than ...");
+    assert(debtRatio.add(_debtRatio) <= MAX_BPS);
+    assert(strategies[_strategy].activation == 0);
+    assert(Strategy(_strategy).vault() == address(this));
+    assert(Strategy(_strategy).want() == address(token));
 
     strategies[_strategy] = StrategyParams({
       performanceFee: _performanceFee,
@@ -371,6 +407,52 @@ contract XVault is ERC20 {
 
     withdrawalQueue.push(_strategy);
 
+  }
+
+  /**
+   * @notice
+   *    Change the quantity of assets `strategy` may manage.
+   *    This may be called by governance or management
+   * @param _strategy The strategy to update
+   * @param _debtRatio The quantity of assets `strategy` may now manage
+   */
+  function updateStrategyDebtRatio(address _strategy, uint256 _debtRatio) external {
+    assert(msg.sender == management || msg.sender == governance);
+    assert(strategies[_strategy].activation > 0);
+    debtRatio = debtRatio.sub(strategies[_strategy].debtRatio);
+    strategies[_strategy].debtRatio = _debtRatio;
+    debtRatio = debtRatio.add(_debtRatio);
+    assert(debtRatio <= MAX_BPS);
+    emit StrategyUpdateDebtRatio(_strategy, _debtRatio);
+  }
+
+  /**
+   * @notice
+   *    Change the quantity of assets per block this Vault may deposit to or withdraw from `strategy`.
+   *    This may only be called by governance or management.
+   * @param _strategy The strategy to update
+   * @param _rateLimit Limit on the increase of debt per unit time since the last harvest
+   */
+  function updateStrategyRateLimit(address _strategy, uint256 _rateLimit) external {
+    assert(msg.sender == management || msg.sender == governance);
+    assert(strategies[_strategy].activation > 0);
+    strategies[_strategy].rateLimit = _rateLimit;
+    emit StrategyUpdateRateLimit(_strategy, _rateLimit);
+  }
+
+  /**
+   * @notice 
+   *    Change the fee the strategist will receive based on this Vault's performance
+   *    This may only be called by goverance.
+   * @param _strategy The strategy to update
+   * @param _performanceFee The new fee the strategist will receive
+   */
+  function updateStrategyPerformanceFee(address _strategy, uint256 _performanceFee) external {
+    assert(msg.sender == governance);
+    assert(performanceFee <= MAX_BPS - performanceFee);
+    assert(strategies[_strategy].activation > 0);
+    strategies[_strategy].performanceFee = _performanceFee;
+    emit StrategyUpdatePerformanceFee(_strategy, _performanceFee);
   }
 
   /**
