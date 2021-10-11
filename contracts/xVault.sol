@@ -108,6 +108,10 @@ contract XVault is ERC20 {
   event StrategyRevoked(
     address indexed strategy
   );
+  event StrategyMigrated(
+    address oldStrategy,
+    address newStrategy
+  );
 
   constructor(
     address _token,
@@ -494,6 +498,46 @@ contract XVault is ERC20 {
   }
 
   /**
+   *  @notice
+   *    Migrate a Strategy, including all assets from `oldVersion` to `newVersion`.
+   *    This may only be called by governance.
+   *  @param oldVersion The existing Strategy to migrate from.
+   *  @param newVersion The new Strategy to migrate to.
+   */
+  function migrateStrategy(address oldVersion, address newVersion) external {
+    assert(msg.sender == governance);
+    assert(newVersion != address(0));
+    assert(strategies[oldVersion].activation > 0);
+    assert(strategies[newVersion].activation == 0);
+
+    StrategyParams memory strategy = strategies[oldVersion];
+    _revokeStrategy(oldVersion);
+    debtRatio = debtRatio.add(strategy.debtRatio);
+    strategies[oldVersion].totalDebt = 0;
+
+    strategies[newVersion] = StrategyParams({
+      performanceFee: strategy.performanceFee,
+      activation: block.timestamp,
+      debtRatio: strategy.debtRatio,
+      rateLimit: strategy.rateLimit,
+      lastReport: block.timestamp,
+      totalDebt: strategy.totalDebt,
+      totalGain: 0,
+      totalLoss: 0
+    });
+
+    Strategy(oldVersion).migrate(newVersion);
+    emit StrategyMigrated(oldVersion, newVersion);
+
+    for (uint i = 0; i < withdrawalQueue.length; i++) {
+      if (withdrawalQueue[i] == oldVersion) {
+        withdrawalQueue[i] = newVersion;
+        return;
+      }
+    }
+  }
+
+  /**
    * @notice
    *    Provide an accurate expected value for the return this `strategy`
    * @param _strategy The Strategy to determine the expected return for. Defaults to caller.
@@ -508,6 +552,14 @@ contract XVault is ERC20 {
     uint256 delta = block.timestamp - strategies[_strategy].lastReport;
     if (delta > 0) {
       return strategies[_strategy].totalGain.mul(delta).div(block.timestamp - strategies[_strategy].activation);
+    } else {
+      return 0;
+    }
+  }
+
+  function availableDepositLimit() external view returns (uint256) {
+    if (depositLimit > _totalAssets()) {
+      return depositLimit.sub(_totalAssets());
     } else {
       return 0;
     }
