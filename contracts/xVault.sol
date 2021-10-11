@@ -5,6 +5,7 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 // interface GuestList {
 //   function authorized(address guest, uint256 amount) public returns (bool);
@@ -23,7 +24,7 @@ interface ITreasury {
 }
 
 
-contract XVault is ERC20 {
+contract XVault is ERC20, ReentrancyGuard {
   using SafeERC20 for ERC20;
   using Address for address;
   using SafeMath for uint256;
@@ -243,7 +244,7 @@ contract XVault is ERC20 {
    * Deposit `_amount` issuing shares to `msg.sender`.
    * If the vault is in emergency shutdown, deposits will not be accepted and this call will fail.
    */
-  function deposit(uint256 _amount) public returns (uint256) {
+  function deposit(uint256 _amount) public nonReentrant returns (uint256) {
     require(emergencyShutdown != true, "in status of Emergency Shutdown");
     uint256 amount = _amount;
     if (amount == 0) {
@@ -317,7 +318,7 @@ contract XVault is ERC20 {
     uint256 maxShare,
     address recipient,
     uint256 maxLoss     // if 1, 0.01%
-  ) public returns (uint256) {
+  ) public nonReentrant returns (uint256) {
     uint256 shares = maxShare;
     if (maxShare == 0) {
       shares = balanceOf(msg.sender);
