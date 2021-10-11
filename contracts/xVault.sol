@@ -14,7 +14,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 interface Strategy {
   function want() external view returns (address);
   function vault() external view returns (address);
-  function estimateTotalAssets() external view returns (uint256);
+  function estimatedTotalAssets() external view returns (uint256);
   function withdraw(uint256 _amount) external returns (uint256, uint256);
   function migrate(address _newStrategy) external;
 }
@@ -773,7 +773,7 @@ contract XVault is ERC20, ReentrancyGuard {
       // this block is used for getting penny
       // if Strategy is rovoked or exited for emergency, it could have some token that wan't withdrawn
       // this is different from debt
-      return Strategy(msg.sender).estimateTotalAssets();
+      return Strategy(msg.sender).estimatedTotalAssets();
     } else {
       return debt;
     }
