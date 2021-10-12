@@ -69,6 +69,8 @@ contract XVault is ERC20, ReentrancyGuard {
   uint256 public managementFee;
   uint256 public performanceFee;
 
+  event Deposit(address indexed user, uint256 amount);
+  event Withdraw(address indexed user, uint256 amount);
   event UpdateTreasury(ITreasury treasury);
   event UpdateGuardian(address guardian);
   event UpdateManagement(address management);
@@ -257,6 +259,7 @@ contract XVault is ERC20, ReentrancyGuard {
 
     token.safeTransferFrom(msg.sender, address(this), amount);
     tokenBalance = tokenBalance.add(amount);
+    emit Deposit(msg.sender, amount);
 
     return shares;
   }
@@ -372,6 +375,7 @@ contract XVault is ERC20, ReentrancyGuard {
     
     token.safeTransfer(recipient, value);
     tokenBalance = tokenBalance.sub(value);
+    emit Withdraw(recipient, value);
     
     return value;
   }
