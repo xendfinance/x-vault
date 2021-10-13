@@ -80,6 +80,8 @@ contract XVault is ERC20, ReentrancyGuard {
   event StrategyRemovedFromQueue(address strategy);
   event UpdateManangementFee(uint256 fee);
   event EmergencyShutdown(bool active);
+  event UpdateWithdrawalQueue(address[] queue);
+  event StrategyAddedToQueue(address strategy);
   event StrategyReported(
     address indexed strategy,
     uint256 gain,
@@ -219,6 +221,21 @@ contract XVault is ERC20, ReentrancyGuard {
 
     emergencyShutdown = active;
     emit EmergencyShutdown(active);
+  }
+
+  /**
+   *  @notice
+   *    Update the withdrawalQueue.
+   *    This may only be called by governance or management.
+   *  @param queue The array of addresses to use as the new withdrawal queue. This is order sensitive.
+   */
+  function setWithdrawalQueue(address[] memory queue) external {
+    require(msg.sender == management || msg.sender == governance);
+    for (uint i = 0; i < queue.length; i++) {
+      assert(strategies[queue[i]].activation > 0);
+    }
+    withdrawalQueue = queue;
+    emit UpdateWithdrawalQueue(queue);
   }
 
   function getApy() external view returns (uint256) {
@@ -462,6 +479,25 @@ contract XVault is ERC20, ReentrancyGuard {
     assert(strategies[_strategy].activation > 0);
     strategies[_strategy].performanceFee = _performanceFee;
     emit StrategyUpdatePerformanceFee(_strategy, _performanceFee);
+  }
+
+  /**
+   *  @notice
+   *    Add `strategy` to `withdrawalQueue`.
+   *    This may only be called by governance or management.
+   *  @dev
+   *    The Strategy will be appended to `withdrawalQueue`, call `setWithdrawalQueue` to change the order.
+   *  @param _strategy The Strategy to add.
+   */
+  function addStrategyToQueue(address _strategy) external {
+    assert(msg.sender == management || msg.sender == governance);
+    assert(strategies[_strategy].activation > 0);
+    assert(withdrawalQueue.length < MAXIMUM_STRATEGIES);
+    for (uint i = 0; i < withdrawalQueue.length; i++) {
+      assert(withdrawalQueue[i] != _strategy);
+    }
+    withdrawalQueue.push(_strategy);
+    emit StrategyAddedToQueue(_strategy);
   }
 
   /**
