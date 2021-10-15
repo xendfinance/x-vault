@@ -47,7 +47,7 @@ contract XVault is ERC20, ReentrancyGuard {
     uint256 totalLoss;          // Total losses that Strategy has realized for Vault
   }
 
-  uint256 public MAX_BPS = 100;
+  uint256 public MAX_BPS = 10000;
   uint256 public SECS_PER_YEAR = 60 * 60 * 24 * 36525 / 100;
 
   mapping (address => StrategyParams) public strategies;
@@ -124,7 +124,7 @@ contract XVault is ERC20, ReentrancyGuard {
     ITreasury _treasury
   ) 
   public ERC20(
-    string(abi.encodePacked("xend ", ERC20(_token).name())),
+    string(abi.encodePacked("Xend ", ERC20(_token).name())),
     string(abi.encodePacked("xv", ERC20(_token).symbol()))
   ){
 
