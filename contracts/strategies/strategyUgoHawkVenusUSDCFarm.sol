@@ -18,12 +18,11 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
 
   UnitrollerI public constant venus = UnitrollerI(0xfD36E2c2a6789Db23113685031d7F16329158384);
   
-  address public constant vai = address(0x4BD17003473389A42DAF6a0a729f6Fdb328BbBd7);
   address public constant xvs = address(0xcF6BB5389c92Bdda8a3747Ddb454cB7a64626C63);
   address public constant wbnb = address(0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c);
 
   address public constant uniswapRouter = address(0x10ED43C718714eb63d5aA57B78B54704E256024E);
-  address public constant crWant = address(0xEF6d459FE81C3Ed53d292c936b2df5a8084975De);
+  address public constant crWant = address(0xD83C88DB3A6cA4a32FFf1603b0f7DDce01F5f727);
 
   uint256 public collateralTarget = 0.73 ether; // 73%
   uint256 public minWant = 1 ether;
@@ -57,7 +56,7 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
   }
 
   function name() external override view returns (string memory) {
-    return "StrategyUgoHawkVenusFarm";
+    return "StrategyUgoHawkVenusUSDCFarm";
   }
 
   function delegatedAssets() external override pure returns (uint256) {
