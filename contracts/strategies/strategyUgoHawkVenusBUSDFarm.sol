@@ -18,15 +18,13 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
 
   UnitrollerI public constant venus = UnitrollerI(0xfD36E2c2a6789Db23113685031d7F16329158384);
   
-  address public constant vai = address(0x4BD17003473389A42DAF6a0a729f6Fdb328BbBd7);
   address public constant xvs = address(0xcF6BB5389c92Bdda8a3747Ddb454cB7a64626C63);
   address public constant wbnb = address(0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c);
 
   address public constant uniswapRouter = address(0x10ED43C718714eb63d5aA57B78B54704E256024E);
-  address public constant crWant = address(0xEF6d459FE81C3Ed53d292c936b2df5a8084975De);
+  address public constant crWant = address(0x2Bc4eb013DDee29D37920938B96d353171289B7C);
 
   uint256 public collateralTarget = 0.73 ether; // 73%
-  uint256 public blocksToLiquidationDangerZone = 46500; // 7 days =  60*60*24*7/13
   uint256 public minWant = 1 ether;
 
   bool public flashLoanActive = true;
@@ -34,7 +32,8 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
   bool public forceMigrate = false;
 
   VBep20I public vToken;
-  uint256 secondsPerBlock = 13;     // roughly 13 seconds per block
+  uint256 immutable secondsPerBlock;     // approx seconds per block
+  uint256 public immutable blocksToLiquidationDangerZone; // 7 days =  60*60*24*7/secondsPerBlock
   uint256 public minXvsToSell = 100000000;
 
   // @notice emitted when trying to do Flash Loan. flashLoan address is 0x00 when no flash loan used
@@ -45,17 +44,19 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     _;
   }
 
-  constructor(address _vault, address _vToken) public BaseStrategy(_vault) {
+  constructor(address _vault, address _vToken, uint8 _secondsPerBlock) public BaseStrategy(_vault) {
     vToken = VBep20I(_vToken);
-    want.safeApprove(address(vToken), uint256(-1));
+    IERC20(VaultAPI(_vault).token()).safeApprove(address(vToken), uint256(-1));
     IERC20(xvs).safeApprove(uniswapRouter, uint256(-1));
     
+    secondsPerBlock = _secondsPerBlock;
+    blocksToLiquidationDangerZone = 60 * 60 * 24 * 7 / _secondsPerBlock;
     maxReportDelay = 3600 * 24;
     profitFactor = 100;
   }
 
   function name() external override view returns (string memory) {
-    return "StrategyUgoHawkVenusFarm";
+    return "StrategyUgoHawkVenusBUSDFarm";
   }
 
   function delegatedAssets() external override pure returns (uint256) {
@@ -198,7 +199,7 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     uint256 profit = 0;
     if (total > params.totalDebt) profit = total.sub(params.totalDebt);
 
-    uint256 credit = vault.creditAvailable().add(profit);
+    uint256 credit = vault.creditAvailable(address(this)).add(profit);
     return (profitFactor.mul(wantGasCost) < credit);
   }
 
@@ -308,10 +309,12 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
 
     uint256 debt = vault.strategies(address(this)).totalDebt; 
 
+    // `balance` - `total debt` is profit
     if (balance > debt) {
       _profit = balance - debt;
       if (wantBalance < _profit) {
-        _debtPayment = wantBalance;
+        // all reserve is profit in case `profit` is greater than `wantBalance`
+        _profit = wantBalance;
       } else if (wantBalance > _profit.add(_debtOutstanding)) {
         _debtPayment = _debtOutstanding;
       } else {
@@ -397,7 +400,7 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
 
     uint256 reservedAmount = 0;
     if (tempColla == 0) {
-      tempColla = 1e15;
+      tempColla = 1e15;   // 0.001 * 1e18. minimum collateralTarget
     }
 
     reservedAmount = borrowBalance.mul(1e18).div(tempColla);
@@ -556,8 +559,8 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     }
     if (leveragedAmount > 10) {
       leveragedAmount = leveragedAmount - 10;
-      vToken.borrow(leveragedAmount);
-      vToken.mint(want.balanceOf(address(this)));
+      require(vToken.borrow(leveragedAmount) == 0, "got collateral?");
+      require(vToken.mint(want.balanceOf(address(this))) == 0, "supply error");
     }
   }
 
@@ -572,13 +575,13 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
    * @param params param data sent when loaning
    */
   function executeOperation(address sender, address underlying, uint amount, uint fee, bytes calldata params) override external {
-    uint currentBalance = IERC20(underlying).balanceOf(address(this));
+    // uint currentBalance = IERC20(underlying).balanceOf(address(this));
+    require(sender == address(this), "caller is not this contract");
     require(msg.sender == crWant, "Not Flash Loan Provider");
-    require(currentBalance >= amount, "Invalid balance, was the flashloan successful?");
     (bool deficit, ) = abi.decode(params, (bool, uint256));
 
     _loanLogic(deficit, amount, amount + fee);
-    IERC20(underlying).transfer(crWant, amount + fee);
+    IERC20(underlying).safeTransfer(crWant, amount + fee);
     
   }
 
@@ -591,7 +594,7 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
    */
   function _loanLogic(bool deficit, uint256 amount, uint256 repayAmount) internal returns (uint) {
     uint256 bal = want.balanceOf(address(this));
-    require(bal >= amount, "Flash loan failed");
+    require(bal >= amount, "Invalid balance, was the flashloan successful?");
 
     if (deficit) {
       vToken.repayBorrow(amount);
@@ -684,9 +687,8 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     }
   }
 
-  function protectedTokens() internal override view returns (address[] memory) {
-    address[] memory protected = new address[](0);
-    return protected;
+  function setProtectedTokens() internal override {
+    protected[xvs] = true;
   }
 
   function _min(uint256 a, uint256 b) internal pure returns (uint256) {

@@ -3,6 +3,7 @@ pragma solidity 0.6.12;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
+import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "../interfaces/VaultAPI.sol";
 
 /**
@@ -20,6 +21,7 @@ import "../interfaces/VaultAPI.sol";
  */
 abstract contract BaseStrategy {
   using SafeMath for uint256;
+  using SafeERC20 for IERC20;
   
   function apiVersion() public pure returns (string memory) {
     return '0.1.0';
@@ -31,14 +33,14 @@ abstract contract BaseStrategy {
     return 0;
   }
 
-  VaultAPI public vault;
+  VaultAPI public immutable vault;
   
   address public strategist;
   address public rewards;
   address public keeper;
 
 
-  IERC20 public want;
+  IERC20 public immutable want;
 
   // The maximum number of seconds between harvest calls.
   uint256 public maxReportDelay = 86400;    // once a day
@@ -52,6 +54,8 @@ abstract contract BaseStrategy {
   uint256 public debtThreshold = 0;
 
   bool public emergencyExit;
+
+  mapping (address => bool) public protected;
   
   event Harvested(uint256 profit, uint256 loss, uint256 debtPayment, uint256 debtOutstanding);
   
@@ -91,8 +95,8 @@ abstract contract BaseStrategy {
 
   constructor(address _vault) public {
     vault = VaultAPI(_vault);
-    want = IERC20(vault.token());
-    want.approve(_vault, uint256(-1));
+    want = IERC20(VaultAPI(_vault).token());
+    IERC20(VaultAPI(_vault).token()).safeApprove(_vault, uint256(-1));
     strategist = msg.sender;
     rewards = msg.sender;
     keeper = msg.sender;
@@ -191,9 +195,7 @@ abstract contract BaseStrategy {
     }
   }
 
-  function tendTrigger(uint256 callCost) public virtual view returns (bool) {
-    return false;
-  }
+  function tendTrigger(uint256 callCost) public virtual view returns (bool);
 
   /**
    * @notice
@@ -227,7 +229,7 @@ abstract contract BaseStrategy {
     uint256 profit = 0;
     if (total > params.totalDebt) profit = total.sub(params.totalDebt);
 
-    uint256 credit = vault.creditAvailable();
+    uint256 credit = vault.creditAvailable(address(this));
     return (profitFactor.mul(callCost) < credit.add(profit));
   }
 
@@ -239,6 +241,10 @@ abstract contract BaseStrategy {
    */
 
   function harvest() external onlyKeepers {
+    _harvest();
+  }
+
+  function _harvest() internal {
     uint256 _profit = 0;
     uint256 _loss = 0;
     uint256 _debtOutstanding = vault.debtOutstanding(address(this));
@@ -266,11 +272,10 @@ abstract contract BaseStrategy {
   }
 
   // withdraw assets to the vault
-  function withdraw(uint256 _amountNeeded) external returns (uint256 _loss) {
+  function withdraw(uint256 _amountNeeded) external returns (uint256 amountFreed, uint256 _loss) {
     require(msg.sender == address(vault), "!vault");
-    uint256 amountFreed;
     (amountFreed, _loss) = liquidatePosition(_amountNeeded);
-    want.transfer(msg.sender, amountFreed);
+    want.safeTransfer(msg.sender, amountFreed);
   }
 
   /**
@@ -288,7 +293,7 @@ abstract contract BaseStrategy {
     require(msg.sender == address(vault) || msg.sender == governance());
     require(BaseStrategy(_newStrategy).vault() == vault);
     prepareMigration(_newStrategy);
-    want.transfer(_newStrategy, want.balanceOf(address(this)));
+    want.safeTransfer(_newStrategy, want.balanceOf(address(this)));
   }
 
   /**
@@ -299,22 +304,22 @@ abstract contract BaseStrategy {
 
   function setEmergencyExit() external onlyAuthorized {
     emergencyExit = true;
-    vault.revokeStrategy();
+    liquidatePosition(uint(-1));
+    want.safeTransfer(address(vault), want.balanceOf(address(this)));
+    vault.revokeStrategy(address(this));
 
     emit EmergencyExitEnabled();
   }
 
-  function protectedTokens() internal virtual view returns (address[] memory);
+  function setProtectedTokens() internal virtual;
 
   // Removes tokens from this strategy that are not the type of tokens managed by this strategy
   function sweep(address _token) external onlyGovernance {
     require(_token != address(want), "!want");
     require(_token != address(vault), "!shares");
+    require(!protected[_token], "!protected");
 
-    address[] memory _protectedTokens = protectedTokens();
-    for (uint256 i; i < _protectedTokens.length; i++) require(_token != _protectedTokens[i], "!protected");
-
-    IERC20(_token).transfer(governance(), IERC20(_token).balanceOf(address(this)));
+    IERC20(_token).safeTransfer(governance(), IERC20(_token).balanceOf(address(this)));
   }
 
   function setProfitFactor(uint256 _profitFactor) external onlyAuthorized {
