@@ -229,7 +229,7 @@ abstract contract BaseStrategy {
     uint256 profit = 0;
     if (total > params.totalDebt) profit = total.sub(params.totalDebt);
 
-    uint256 credit = vault.creditAvailable();
+    uint256 credit = vault.creditAvailable(address(this));
     return (profitFactor.mul(callCost) < credit.add(profit));
   }
 
@@ -306,7 +306,7 @@ abstract contract BaseStrategy {
     emergencyExit = true;
     liquidatePosition(uint(-1));
     want.safeTransfer(address(vault), want.balanceOf(address(this)));
-    vault.revokeStrategy();
+    vault.revokeStrategy(address(this));
 
     emit EmergencyExitEnabled();
   }

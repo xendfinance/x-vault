@@ -199,7 +199,7 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     uint256 profit = 0;
     if (total > params.totalDebt) profit = total.sub(params.totalDebt);
 
-    uint256 credit = vault.creditAvailable().add(profit);
+    uint256 credit = vault.creditAvailable(address(this)).add(profit);
     return (profitFactor.mul(wantGasCost) < credit);
   }
 

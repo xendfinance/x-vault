@@ -380,7 +380,7 @@ contract XVault is ERC20, ReentrancyGuard {
         totalDebt = totalDebt.sub(withdrawn.add(loss));
       }
 
-      require(totalLoss < maxLoss.mul(value.add(totalLoss)).div(MAX_BPS), "revert if totalLoss is more than permitted");
+      require(totalLoss <= maxLoss.mul(value.add(totalLoss)).div(MAX_BPS), "revert if totalLoss is more than permitted");
     }
 
     if (value > token.balanceOf(address(this))) {

@@ -19,17 +19,17 @@ interface VaultAPI is IERC20 {
 
   function apiVersion() external view returns (string memory);
 
-  function withdraw(uint256 shares, address recipient) external;
+  function withdraw(uint256 shares, address recipient, uint256 maxLoss) external;
 
   function token() external view returns (address);
 
   function strategies(address _strategy) external view returns (StrategyParams memory);
 
-  function creditAvailable() external view returns (uint256);
+  function creditAvailable(address _strategy) external view returns (uint256);
 
   function debtOutstanding(address _strategy) external view returns (uint256);
 
-  function expectedReturn() external view returns (uint256);
+  function expectedReturn(address _strategy) external view returns (uint256);
 
   function report(
     uint256 _gain,
@@ -37,7 +37,7 @@ interface VaultAPI is IERC20 {
     uint256 _debtPayment
   ) external returns (uint256);
 
-  function revokeStrategy() external;
+  function revokeStrategy(address _strategy) external;
 
   function governance() external view returns (address);
 
