@@ -6,8 +6,6 @@ import "../interfaces/alpaca/IVault.sol";
 import "../interfaces/autofarm/IAutoFarmV2.sol";
 import "../interfaces/uniswap/IUniswapV2Router.sol";
 
-// 96.39229 Thu 07 Oct 2021 03:44:04 AM CST
-
 contract Strategy is BaseStrategy {
   using SafeERC20 for IERC20;
   using Address for address;
@@ -138,7 +136,30 @@ contract Strategy is BaseStrategy {
     uint256 _loss,
     uint256 _debtPayment
   ) {
+    _profit = 0;
+    _loss = 0;
 
+    if (autofarm.stakedWantTokens(poolId, address(this)) == 0) {
+      uint256 wantBalance = want.balanceOf(address(this));
+      _debtPayment = _min(wantBalance, _debtOutstanding);
+      return (_profit, _loss, _debtPayment);
+    }
+
+    _claimAuto();
+    _disposeAuto();
+
+    uint256 wantBalance = want.balanceOf(address(this));
+
+    uint256 ibTokenBalance = autofarm.stakedWantTokens(poolId, address(this));
+    uint256 assetBalance = alpacaVault.debtShareToVal(ibTokenBalance).add(wantBalance);
+    uint256 debt = vault.strategies(address(this)).totalDebt;
+
+    if (assetBalance > debt) {
+      _profit = assetBalance - debt;
+    } else {
+      _loss = debt - assetBalance;
+    }
+    _debtPayment = _min(_debtOutstanding, _profit);
   }
 
   function adjustPosition(uint256 _debtOutstanding) internal override {
@@ -161,6 +182,11 @@ contract Strategy is BaseStrategy {
     _disposeAuto();
   }
 
+  // claims AUTO reward token
+  function _claimAuto() internal {
+    autofarm.withdraw(poolId, uint256(0));
+  }
+
   // sell harvested AUTO token
   function _disposeAuto() internal {
     uint256 _auto = IERC20(autoToken).balanceOf(address(this));
@@ -176,7 +202,6 @@ contract Strategy is BaseStrategy {
   }
 
   function liquidatePosition(uint256 _amountNeeded) internal override returns (uint256 _amountFreed, uint256 _loss) {
-    uint256 _balance = want.balanceOf(address(this));
     uint256 staked = autofarm.stakedWantTokens(poolId, address(this));
     uint256 assets = alpacaVault.debtShareToVal(staked);
 
