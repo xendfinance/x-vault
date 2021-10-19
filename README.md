@@ -1,6 +1,6 @@
 # Documentation
 
-![vault diagram](https://github.com/xendfinance/x-vault/blob/main/public/images/diagram.png)
+![vault diagram](https://github.com/xendfinance/x-vault/blob/main/public/images/diagram.jpg)
 
 This is a vault system that leverages the USDT token to get high yield.
 
