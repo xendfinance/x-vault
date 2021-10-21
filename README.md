@@ -31,3 +31,9 @@ On the other hand, while lending assets to the venus protocol, venus gives XVS t
 And when funds are withdrawn, strategy borrows assets from cream finance using flash loan to repay to the venus protocol and withdraw needed funds from the venus protocol.
 
 And strategy returns the assets to the vault.
+
+## Deployed Contracts
+
+### BSC Mainnet
+
+Visit [Xend Finance Docs](https://docs.xend.finance/contracts/registry) to see deployed smart contract addresses
