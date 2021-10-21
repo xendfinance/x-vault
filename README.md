@@ -34,6 +34,4 @@ And strategy returns the assets to the vault.
 
 ## Deployed Contracts
 
-### BSC Mainnet
-
 Visit [Xend Finance Docs](https://docs.xend.finance/contracts/registry) to see deployed smart contract addresses
