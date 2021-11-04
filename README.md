@@ -31,3 +31,15 @@ On the other hand, while lending assets to the venus protocol, venus gives XVS t
 And when funds are withdrawn, strategy borrows assets from cream finance using flash loan to repay to the venus protocol and withdraw needed funds from the venus protocol.
 
 And strategy returns the assets to the vault.
+
+## Alpaca+Autofarm Strategy
+
+![alpaca strategy diagram](https://i.imgur.com/1UjnMdF.png)
+
+This strategy is based on Alpaca and Autofarm platform.
+
+The general flow of the strategy is as follows.
+
+When the strategy gets assets(`want` token) from the vault, it deposits assets to the Alpaca lending platform. Then the lending platform issues ibToken as a share token to the strategy. The strategy stake this share token (ibToken) to the corresponding Autofarm vault. This is a deposit action.
+After depositing assets, the strategy checks AUTO reward regularly and if enough to harvest, harvests AUTO token and swap it to the asset(`want` token) and deposit again just like compounding. Withdraw action is vice versa.
+
