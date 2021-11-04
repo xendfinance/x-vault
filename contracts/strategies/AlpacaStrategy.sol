@@ -1,22 +1,23 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.6.12;
+pragma experimental ABIEncoderV2;
 
 import "./BaseStrategy.sol";
 import "../interfaces/alpaca/IVault.sol";
 import "../interfaces/autofarm/IAutoFarmV2.sol";
 import "../interfaces/uniswap/IUniswapV2Router.sol";
 
-contract Strategy is BaseStrategy {
+contract StrategyAlpacaAutofarm is BaseStrategy {
   using SafeERC20 for IERC20;
   using Address for address;
   using SafeMath for uint256;
 
-  IAlpacaVault public alpacaVault;
+  IAlpacaVault public ibToken;
   IAutoFarmV2 public autofarm = IAutoFarmV2(0x0895196562C7868C5Be92459FaE7f877ED450452);
-  uint256 constant private poolId = 489;  // the ibUSDT pool id of autofarm is 489
+  uint256 immutable private poolId;  // the ibUSDT pool id of autofarm is 489
   address public constant autoToken = address(0xa184088a740c695E156F91f5cC086a06bb78b827);
   address public constant wbnb = address(0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c);
-  address public constant ibUsdt = address(0x158Da805682BdC8ee32d52833aD41E74bb951E59);
+  // address public constant ibUsdt = address(0x158Da805682BdC8ee32d52833aD41E74bb951E59);
 
   address public constant uniswapRouter = address(0x10ED43C718714eb63d5aA57B78B54704E256024E);
 
@@ -28,8 +29,9 @@ contract Strategy is BaseStrategy {
     _;
   }
 
-  constructor(address _vault, address _ibToken) public BaseStrategy(_vault) {
-    alpacaVault = IAlpacaVault(_ibToken);
+  constructor(address _vault, address _ibToken, uint256 _poolId) public BaseStrategy(_vault) {
+    ibToken = IAlpacaVault(_ibToken);
+    poolId = _poolId;
     maxReportDelay = 3600 * 24;
   }
 
@@ -49,10 +51,14 @@ contract Strategy is BaseStrategy {
     minAutoToSell = _minAutoToSell;
   }
 
+  /**
+   *  An accurate estimate for the total amount of assets (principle + return)
+   *  that this strategy is currently managing, denominated in terms of want tokens.
+   */
   function estimatedTotalAssets() public override view returns (uint256) {
     uint256 depositBalanceAutoFarm = autofarm.stakedWantTokens(poolId, address(this));
-    uint256 assets = alpacaVault.debtShareToVal(alpacaVault.balanceOf(address(this)).add(depositBalanceAutoFarm));
-    uint256 claimableAuto = autofarm.pendingAuto(poolId, address(this));
+    uint256 assets = ibToken.debtShareToVal(ibToken.balanceOf(address(this)).add(depositBalanceAutoFarm));
+    uint256 claimableAuto = autofarm.pendingAUTO(poolId, address(this));
     uint256 currentAuto = IERC20(autoToken).balanceOf(address(this));
 
     uint256 estimatedWant = priceCheck(autoToken, address(want), claimableAuto.add(currentAuto));
@@ -75,6 +81,9 @@ contract Strategy is BaseStrategy {
     }
   }
 
+  /**
+   *  The strategy don't need `tend` action, so just returns `false`.
+   */
   function tendTrigger(uint256 gasCost) public override view returns (bool) {
     return false;
   }
@@ -93,7 +102,7 @@ contract Strategy is BaseStrategy {
     uint256 wantGasCost = priceCheck(wbnb, address(want), gasCost);
     uint256 autoGasCost = priceCheck(wbnb, autoToken, gasCost);
 
-    uint256 _claimableAuto = autofarm.pendingAuto(poolId, address(this));
+    uint256 _claimableAuto = autofarm.pendingAUTO(poolId, address(this));
 
     if (_claimableAuto > minAutoToSell) {
       // trigger harvest if AUTO token balance is worth to do swap
@@ -119,7 +128,7 @@ contract Strategy is BaseStrategy {
   function prepareMigration(address _newStrategy) internal override {
     if (!forceMigrate) {
       autofarm.withdrawAll(poolId);
-      alpacaVault.withdraw(IERC20(ibUsdt).balanceOf(address(this)));
+      ibToken.withdraw(IERC20(ibToken).balanceOf(address(this)));
       
       IERC20 _auto = IERC20(autoToken);
       uint _autoBalance = _auto.balanceOf(address(this));
@@ -151,7 +160,7 @@ contract Strategy is BaseStrategy {
     uint256 wantBalance = want.balanceOf(address(this));
 
     uint256 ibTokenBalance = autofarm.stakedWantTokens(poolId, address(this));
-    uint256 assetBalance = alpacaVault.debtShareToVal(ibTokenBalance).add(wantBalance);
+    uint256 assetBalance = ibToken.debtShareToVal(ibTokenBalance).add(wantBalance);
     uint256 debt = vault.strategies(address(this)).totalDebt;
 
     if (assetBalance > debt) {
@@ -176,9 +185,9 @@ contract Strategy is BaseStrategy {
   }
 
   function _withdrawSome(uint256 _amount) internal {
-    uint256 _amountShare = alpacaVault.debtValToShare(_amount);
+    uint256 _amountShare = ibToken.debtValToShare(_amount);
     autofarm.withdraw(poolId, _amountShare);
-    alpacaVault.withdraw(IERC20(ibUsdt).balanceOf(address(this)));
+    ibToken.withdraw(IERC20(ibToken).balanceOf(address(this)));
     _disposeAuto();
   }
 
@@ -203,7 +212,7 @@ contract Strategy is BaseStrategy {
 
   function liquidatePosition(uint256 _amountNeeded) internal override returns (uint256 _amountFreed, uint256 _loss) {
     uint256 staked = autofarm.stakedWantTokens(poolId, address(this));
-    uint256 assets = alpacaVault.debtShareToVal(staked);
+    uint256 assets = ibToken.debtShareToVal(staked);
 
     uint256 debtOutstanding = vault.debtOutstanding(address(this));
     if (debtOutstanding > assets) {
