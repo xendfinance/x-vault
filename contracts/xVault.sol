@@ -120,7 +120,8 @@ contract XVault is ERC20, ReentrancyGuard {
     string(abi.encodePacked("Xend ", ERC20(_token).name())),
     string(abi.encodePacked("xv", ERC20(_token).symbol()))
   ){
-
+    require(_governance != address(0), "governance address can't be zero");
+    require(address(_treasury) != address(0), "treasury address can't be zero");
     token = ERC20(_token);
     guardian = msg.sender;
     governance = _governance;
@@ -147,12 +148,14 @@ contract XVault is ERC20, ReentrancyGuard {
 
   function setTreasury(ITreasury _treasury) external {
     require(msg.sender == governance, "!governance");
+    require(address(_treasury) != address(0), "treasury address can't be zero");
     treasury = _treasury;
     emit UpdateTreasury(_treasury);
   }
 
   function setGuardian(address _guardian) external {
     require(msg.sender == governance || msg.sender == guardian, "caller must be governance or guardian");
+    require(_guardian != address(0), "guardian address can't be zero");
     guardian = _guardian;
     emit UpdateGuardian(_guardian);
   }
@@ -163,11 +166,13 @@ contract XVault is ERC20, ReentrancyGuard {
 
   function setGovernance(address _governance) external {
     require(msg.sender == governance, "!governance");
+    require(_governance != address(0), "guardian address can't be zero");
     governance = _governance;
   }
 
   function setManagement(address _management) external {
     require(msg.sender == governance, "!governance");
+    require(_management != address(0), "guardian address can't be zero");
     management = _management;
     emit UpdateManagement(_management);
   }
