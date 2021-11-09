@@ -755,10 +755,10 @@ contract XVault is ERC20, ReentrancyGuard {
 
     uint256 totalAvailable = gain.add(debtPayment);
     if (totalAvailable < credit) {
-      token.transfer(msg.sender, credit.sub(totalAvailable));
+      token.safeTransfer(msg.sender, credit.sub(totalAvailable));
       tokenBalance = tokenBalance.sub(credit.sub(totalAvailable));
     } else if (totalAvailable > credit) {
-      token.transferFrom(msg.sender, address(this), totalAvailable.sub(credit));
+      token.safeTransferFrom(msg.sender, address(this), totalAvailable.sub(credit));
       tokenBalance = tokenBalance.add(totalAvailable.sub(credit));
     }
     // else (if totalAvailable == credit), it is already balanced so do nothing.
