@@ -111,6 +111,21 @@ contract XVault is ERC20, ReentrancyGuard {
     address newStrategy
   );
 
+  modifier governanceOnly() {
+    require(msg.sender == governance, "!governance");
+    _;
+  }
+
+  modifier guardianOnly() {
+    require(msg.sender == governance || msg.sender == guardian, "caller must be governance or guardian");
+    _;
+  }
+
+  modifier managementOnly {
+    require(msg.sender == governance || msg.sender == management, "caller must be governance or management");
+    _;
+  }
+
   constructor(
     address _token,
     address _governance,
@@ -136,53 +151,42 @@ contract XVault is ERC20, ReentrancyGuard {
     _setupDecimals(ERC20(_token).decimals());
   }
 
-  function setTreasury(ITreasury _treasury) external {
-    require(msg.sender == governance, "!governance");
+  function setTreasury(ITreasury _treasury) external governanceOnly {
     require(address(_treasury) != address(0), "treasury address can't be zero");
     treasury = _treasury;
     emit UpdateTreasury(_treasury);
   }
 
-  function setGuardian(address _guardian) external {
-    require(msg.sender == governance || msg.sender == guardian, "caller must be governance or guardian");
+  function setGuardian(address _guardian) external guardianOnly {
     require(_guardian != address(0), "guardian address can't be zero");
     guardian = _guardian;
     emit UpdateGuardian(_guardian);
   }
 
-  function balance() public view returns (uint256) {
-    return token.balanceOf(address(this));
-  }
-
-  function setGovernance(address _governance) external {
-    require(msg.sender == governance, "!governance");
+  function setGovernance(address _governance) external governanceOnly {
     require(_governance != address(0), "guardian address can't be zero");
     governance = _governance;
   }
 
-  function setManagement(address _management) external {
-    require(msg.sender == governance, "!governance");
+  function setManagement(address _management) external governanceOnly {
     require(_management != address(0), "guardian address can't be zero");
     management = _management;
     emit UpdateManagement(_management);
   }
 
-  function setDepositLimit(uint256 limit) external {
-    require(msg.sender == governance, "!governance");
+  function setDepositLimit(uint256 limit) external governanceOnly {
     depositLimit = limit;
     emit UpdateDepositLimit(depositLimit);
   }
   
 
-  function setPerformanceFee(uint256 fee) external {
-    require(msg.sender == governance, "!governance");
+  function setPerformanceFee(uint256 fee) external governanceOnly {
     require(fee <= MAX_BPS - performanceFee, "performance fee should be smaller than ...");
     performanceFee = fee;
     emit UpdatePerformanceFee(fee);
   }
 
-  function setManagementFee(uint256 fee) external {
-    require(msg.sender == governance, "!governance");
+  function setManagementFee(uint256 fee) external governanceOnly {
     require(fee < MAX_BPS, "management fee should be smaller than ...");
     managementFee = fee;
     emit UpdateManangementFee(fee);
@@ -211,8 +215,7 @@ contract XVault is ERC20, ReentrancyGuard {
    *    This may only be called by governance or management.
    *  @param queue The array of addresses to use as the new withdrawal queue. This is order sensitive.
    */
-  function setWithdrawalQueue(address[] memory queue) external {
-    require(msg.sender == management || msg.sender == governance);
+  function setWithdrawalQueue(address[] memory queue) external managementOnly {
     for (uint i = 0; i < queue.length; i++) {
       assert(strategies[queue[i]].activation > 0);
     }
@@ -273,6 +276,10 @@ contract XVault is ERC20, ReentrancyGuard {
 
   function totalAssets() external view returns (uint256) {
     return _totalAssets();
+  }
+
+  function balance() public view returns (uint256) {
+    return token.balanceOf(address(this));
   }
 
   function _shareValue(uint256 _share) internal view returns (uint256) {
@@ -388,10 +395,9 @@ contract XVault is ERC20, ReentrancyGuard {
    * @param _rateLimit Limit on the increase of debt per unit time since last harvest
    * @param _performanceFee The fee the strategist will receive based on this Vault's performance.
    */
-  function addStrategy(address _strategy, uint256 _debtRatio, uint256 _rateLimit, uint256 _performanceFee) public {
+  function addStrategy(address _strategy, uint256 _debtRatio, uint256 _rateLimit, uint256 _performanceFee) public governanceOnly {
     require(_strategy != address(0), "strategy address can't be zero");
     assert(!emergencyShutdown);
-    require(msg.sender == governance, "caller must be governance");
     require(_performanceFee <= MAX_BPS - performanceFee, "performance fee should be smaller than ...");
     assert(debtRatio.add(_debtRatio) <= MAX_BPS);
     assert(strategies[_strategy].activation == 0);
@@ -424,8 +430,7 @@ contract XVault is ERC20, ReentrancyGuard {
    * @param _strategy The strategy to update
    * @param _debtRatio The quantity of assets `strategy` may now manage
    */
-  function updateStrategyDebtRatio(address _strategy, uint256 _debtRatio) external {
-    assert(msg.sender == management || msg.sender == governance);
+  function updateStrategyDebtRatio(address _strategy, uint256 _debtRatio) external managementOnly {
     assert(strategies[_strategy].activation > 0);
     debtRatio = debtRatio.sub(strategies[_strategy].debtRatio);
     strategies[_strategy].debtRatio = _debtRatio;
@@ -441,8 +446,7 @@ contract XVault is ERC20, ReentrancyGuard {
    * @param _strategy The strategy to update
    * @param _rateLimit Limit on the increase of debt per unit time since the last harvest
    */
-  function updateStrategyRateLimit(address _strategy, uint256 _rateLimit) external {
-    assert(msg.sender == management || msg.sender == governance);
+  function updateStrategyRateLimit(address _strategy, uint256 _rateLimit) external managementOnly {
     assert(strategies[_strategy].activation > 0);
     strategies[_strategy].rateLimit = _rateLimit;
     emit StrategyUpdateRateLimit(_strategy, _rateLimit);
@@ -455,7 +459,7 @@ contract XVault is ERC20, ReentrancyGuard {
    * @param _strategy The strategy to update
    * @param _performanceFee The new fee the strategist will receive
    */
-  function updateStrategyPerformanceFee(address _strategy, uint256 _performanceFee) external {
+  function updateStrategyPerformanceFee(address _strategy, uint256 _performanceFee) external governanceOnly {
     assert(msg.sender == governance);
     assert(performanceFee <= MAX_BPS - performanceFee);
     assert(strategies[_strategy].activation > 0);
@@ -471,8 +475,7 @@ contract XVault is ERC20, ReentrancyGuard {
    *    The Strategy will be appended to `withdrawalQueue`, call `setWithdrawalQueue` to change the order.
    *  @param _strategy The Strategy to add.
    */
-  function addStrategyToQueue(address _strategy) external {
-    assert(msg.sender == management || msg.sender == governance);
+  function addStrategyToQueue(address _strategy) external managementOnly {
     assert(strategies[_strategy].activation > 0);
     assert(withdrawalQueue.length < MAXIMUM_STRATEGIES);
     for (uint i = 0; i < withdrawalQueue.length; i++) {
@@ -488,8 +491,7 @@ contract XVault is ERC20, ReentrancyGuard {
    *    This may only be called by governance or management.
    * @param _strategy The Strategy to remove
    */
-  function removeStrategyFromQueue(address _strategy) external {
-    require(msg.sender == management || msg.sender == governance);
+  function removeStrategyFromQueue(address _strategy) external managementOnly {
     
     for (uint i = 0; i < withdrawalQueue.length; i++) {
       
@@ -527,8 +529,7 @@ contract XVault is ERC20, ReentrancyGuard {
    *  @param oldVersion The existing Strategy to migrate from.
    *  @param newVersion The new Strategy to migrate to.
    */
-  function migrateStrategy(address oldVersion, address newVersion) external {
-    assert(msg.sender == governance);
+  function migrateStrategy(address oldVersion, address newVersion) external governanceOnly {
     assert(newVersion != address(0));
     assert(strategies[oldVersion].activation > 0);
     assert(strategies[newVersion].activation == 0);
