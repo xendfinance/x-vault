@@ -41,8 +41,8 @@ contract XVault is ERC20, ReentrancyGuard {
     uint256 totalLoss;          // Total losses that Strategy has realized for Vault
   }
 
-  uint256 public MAX_BPS = 10000;
-  uint256 public SECS_PER_YEAR = 60 * 60 * 24 * 36525 / 100;
+  uint256 public constant MAX_BPS = 10000;
+  uint256 public constant SECS_PER_YEAR = 60 * 60 * 24 * 36525 / 100;
 
   mapping (address => StrategyParams) public strategies;
   uint256 constant MAXIMUM_STRATEGIES = 20;
