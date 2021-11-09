@@ -136,16 +136,6 @@ contract XVault is ERC20, ReentrancyGuard {
     _setupDecimals(ERC20(_token).decimals());
   }
 
-  // function setName(string memory _name) external {
-  //   require(msg.sender == governance, "!governance");
-  //   name = _name;
-  // }
-
-  // function setSymbol(string memory _symbol) external {
-  //   require(msg.sender == governance, "!governance");
-  //   symbol = _symbol;
-  // }
-
   function setTreasury(ITreasury _treasury) external {
     require(msg.sender == governance, "!governance");
     require(address(_treasury) != address(0), "treasury address can't be zero");
