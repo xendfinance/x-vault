@@ -216,6 +216,7 @@ contract XVault is ERC20, ReentrancyGuard {
    *  @param queue The array of addresses to use as the new withdrawal queue. This is order sensitive.
    */
   function setWithdrawalQueue(address[] memory queue) external managementOnly {
+    require(queue.length < MAXIMUM_STRATEGIES, "withdrawal queue is over allowed maximum");
     for (uint i = 0; i < queue.length; i++) {
       assert(strategies[queue[i]].activation > 0);
     }
@@ -477,7 +478,7 @@ contract XVault is ERC20, ReentrancyGuard {
    */
   function addStrategyToQueue(address _strategy) external managementOnly {
     assert(strategies[_strategy].activation > 0);
-    assert(withdrawalQueue.length < MAXIMUM_STRATEGIES);
+    require(withdrawalQueue.length < MAXIMUM_STRATEGIES, "withdrawal queue is over allowed maximum");
     for (uint i = 0; i < withdrawalQueue.length; i++) {
       assert(withdrawalQueue[i] != _strategy);
     }
