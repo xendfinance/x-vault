@@ -218,7 +218,7 @@ contract XVault is ERC20, ReentrancyGuard {
   function setWithdrawalQueue(address[] memory queue) external managementOnly {
     require(queue.length < MAXIMUM_STRATEGIES, "withdrawal queue is over allowed maximum");
     for (uint i = 0; i < queue.length; i++) {
-      assert(strategies[queue[i]].activation > 0);
+      require(strategies[queue[i]].activation > 0, "all the strategies should be active");
     }
     withdrawalQueue = queue;
     emit UpdateWithdrawalQueue(queue);
@@ -398,12 +398,12 @@ contract XVault is ERC20, ReentrancyGuard {
    */
   function addStrategy(address _strategy, uint256 _debtRatio, uint256 _rateLimit, uint256 _performanceFee) public governanceOnly {
     require(_strategy != address(0), "strategy address can't be zero");
-    assert(!emergencyShutdown);
+    require(!emergencyShutdown, "in status of Emergency Shutdown");
     require(_performanceFee <= MAX_BPS - performanceFee, "performance fee should be smaller than ...");
-    assert(debtRatio.add(_debtRatio) <= MAX_BPS);
-    assert(strategies[_strategy].activation == 0);
-    assert(Strategy(_strategy).vault() == address(this));
-    assert(Strategy(_strategy).want() == address(token));
+    require(debtRatio.add(_debtRatio) <= MAX_BPS, "total debt ratio should be smaller than MAX_BPS");
+    require(strategies[_strategy].activation == 0, "already activated");
+    require(Strategy(_strategy).vault() == address(this), "is not one for this vault");
+    require(Strategy(_strategy).want() == address(token), "incorrect want token for this vault");
 
     strategies[_strategy] = StrategyParams({
       performanceFee: _performanceFee,
@@ -432,11 +432,11 @@ contract XVault is ERC20, ReentrancyGuard {
    * @param _debtRatio The quantity of assets `strategy` may now manage
    */
   function updateStrategyDebtRatio(address _strategy, uint256 _debtRatio) external managementOnly {
-    assert(strategies[_strategy].activation > 0);
+    require(strategies[_strategy].activation > 0, "the strategy not activated");
     debtRatio = debtRatio.sub(strategies[_strategy].debtRatio);
     strategies[_strategy].debtRatio = _debtRatio;
     debtRatio = debtRatio.add(_debtRatio);
-    assert(debtRatio <= MAX_BPS);
+    require(debtRatio <= MAX_BPS, "debtRatio should be smaller than MAX_BPS");
     emit StrategyUpdateDebtRatio(_strategy, _debtRatio);
   }
 
@@ -448,7 +448,7 @@ contract XVault is ERC20, ReentrancyGuard {
    * @param _rateLimit Limit on the increase of debt per unit time since the last harvest
    */
   function updateStrategyRateLimit(address _strategy, uint256 _rateLimit) external managementOnly {
-    assert(strategies[_strategy].activation > 0);
+    require(strategies[_strategy].activation > 0, "the strategy not activated");
     strategies[_strategy].rateLimit = _rateLimit;
     emit StrategyUpdateRateLimit(_strategy, _rateLimit);
   }
@@ -461,9 +461,8 @@ contract XVault is ERC20, ReentrancyGuard {
    * @param _performanceFee The new fee the strategist will receive
    */
   function updateStrategyPerformanceFee(address _strategy, uint256 _performanceFee) external governanceOnly {
-    assert(msg.sender == governance);
-    assert(performanceFee <= MAX_BPS - performanceFee);
-    assert(strategies[_strategy].activation > 0);
+    require(performanceFee <= MAX_BPS - performanceFee, "fee should be smaller than MAX_BPS reduced by vault performance fee");
+    require(strategies[_strategy].activation > 0, "the strategy not activated");
     strategies[_strategy].performanceFee = _performanceFee;
     emit StrategyUpdatePerformanceFee(_strategy, _performanceFee);
   }
@@ -477,10 +476,10 @@ contract XVault is ERC20, ReentrancyGuard {
    *  @param _strategy The Strategy to add.
    */
   function addStrategyToQueue(address _strategy) external managementOnly {
-    assert(strategies[_strategy].activation > 0);
+    require(strategies[_strategy].activation > 0, "the strategy not activated");
     require(withdrawalQueue.length < MAXIMUM_STRATEGIES, "withdrawal queue is over allowed maximum");
     for (uint i = 0; i < withdrawalQueue.length; i++) {
-      assert(withdrawalQueue[i] != _strategy);
+      require(withdrawalQueue[i] != _strategy, "the strategy already added to the withdrawal queue");
     }
     withdrawalQueue.push(_strategy);
     emit StrategyAddedToQueue(_strategy);
@@ -517,7 +516,7 @@ contract XVault is ERC20, ReentrancyGuard {
   }
 
   function _revokeStrategy(address _strategy) internal {
-    assert(strategies[_strategy].debtRatio > 0);
+    require(strategies[_strategy].debtRatio > 0, "the strategy already revoked");
     debtRatio = debtRatio.sub(strategies[_strategy].debtRatio);
     strategies[_strategy].debtRatio = 0;
     emit StrategyRevoked(_strategy);
@@ -531,9 +530,9 @@ contract XVault is ERC20, ReentrancyGuard {
    *  @param newVersion The new Strategy to migrate to.
    */
   function migrateStrategy(address oldVersion, address newVersion) external governanceOnly {
-    assert(newVersion != address(0));
-    assert(strategies[oldVersion].activation > 0);
-    assert(strategies[newVersion].activation == 0);
+    require(newVersion != address(0), "new strategy can't be a zero");
+    require(strategies[oldVersion].activation > 0, "the old strategy should've been active");
+    require(strategies[newVersion].activation == 0, "the new strategy already activated before");
 
     StrategyParams memory strategy = strategies[oldVersion];
     _revokeStrategy(oldVersion);
