@@ -2,14 +2,9 @@
 pragma solidity 0.6.12;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-
-// interface GuestList {
-//   function authorized(address guest, uint256 amount) public returns (bool);
-// }
 
 interface Strategy {
   function want() external view returns (address);
@@ -34,7 +29,6 @@ contract XVault is ERC20, ReentrancyGuard {
   address public management;
   ERC20 public immutable token;
 
-  // GuestList guestList;
 
   struct StrategyParams {
     uint256 performanceFee;     // strategist's fee
@@ -74,7 +68,6 @@ contract XVault is ERC20, ReentrancyGuard {
   event UpdateTreasury(ITreasury treasury);
   event UpdateGuardian(address guardian);
   event UpdateManagement(address management);
-  event UpdateGuestList(address guestList);
   event UpdateDepositLimit(uint256 depositLimit);
   event UpdatePerformanceFee(uint256 fee);
   event StrategyRemovedFromQueue(address strategy);
@@ -178,12 +171,6 @@ contract XVault is ERC20, ReentrancyGuard {
     management = _management;
     emit UpdateManagement(_management);
   }
-
-  // function setGuestList(address _guestList) external {
-  //   require(msg.sender == governance, "!governance");
-  //   guestList = GuestList(_guestList);
-  //   emit UpdateGuestList(guestList);
-  // }
 
   function setDepositLimit(uint256 limit) external {
     require(msg.sender == governance, "!governance");
