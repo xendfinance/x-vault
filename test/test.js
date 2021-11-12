@@ -4,7 +4,6 @@ const BN = require('bn.js');
 
 const XVault = artifacts.require('XVault');
 const Strategy = artifacts.require('Strategy');
-const TestContract = artifacts.require('TestContract');
 const USDT = require('./abi/USDT.json');
 
 contract('xVault', async([dev, minter, admin, alice, bob]) => {

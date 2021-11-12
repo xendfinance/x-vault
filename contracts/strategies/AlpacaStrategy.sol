@@ -4,7 +4,7 @@ pragma experimental ABIEncoderV2;
 
 import "./BaseStrategy.sol";
 import "../interfaces/alpaca/IVault.sol";
-import "../interfaces/autofarm/IAutoFarmV2.sol";
+import "../interfaces/alpaca/IAlpacaFarm.sol";
 import "../interfaces/uniswap/IUniswapV2Router.sol";
 
 contract StrategyAlpacaAutofarm is BaseStrategy {
@@ -13,15 +13,17 @@ contract StrategyAlpacaAutofarm is BaseStrategy {
   using SafeMath for uint256;
 
   IAlpacaVault public ibToken;
-  IAutoFarmV2 public autofarm = IAutoFarmV2(0x0895196562C7868C5Be92459FaE7f877ED450452);
-  uint256 immutable private poolId;  // the ibUSDT pool id of autofarm is 489
-  address public constant autoToken = address(0xa184088a740c695E156F91f5cC086a06bb78b827);
+  address public constant alpacaToken = address(0x8F0528cE5eF7B51152A59745bEfDD91D97091d2F);
+  IAlpacaFarm public alpacaFarm = IAlpacaFarm(0xA625AB01B08ce023B2a342Dbb12a16f2C8489A8F);
+  uint256 immutable private poolId;  // the ibToken pool id of alpaca farm contract is 16
+  // address public constant autoToken = address(0xa184088a740c695E156F91f5cC086a06bb78b827);
   address public constant wbnb = address(0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c);
+  address public constant busd = address(0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56);
   // address public constant ibUsdt = address(0x158Da805682BdC8ee32d52833aD41E74bb951E59);
 
   address public constant uniswapRouter = address(0x10ED43C718714eb63d5aA57B78B54704E256024E);
 
-  uint256 public minAutoToSell = 1e10;
+  uint256 public minAlpacaToSell = 1e10;
   bool public forceMigrate = false;
 
   modifier management(){
@@ -47,8 +49,8 @@ contract StrategyAlpacaAutofarm is BaseStrategy {
     forceMigrate = _force;
   }
 
-  function setMinAutoToSell(uint256 _minAutoToSell) external management {
-    minAutoToSell = _minAutoToSell;
+  function setMinAutoToSell(uint256 _minAlpacaToSell) external management {
+    minAlpacaToSell = _minAlpacaToSell;
   }
 
   /**
@@ -56,12 +58,12 @@ contract StrategyAlpacaAutofarm is BaseStrategy {
    *  that this strategy is currently managing, denominated in terms of want tokens.
    */
   function estimatedTotalAssets() public override view returns (uint256) {
-    uint256 depositBalanceAutoFarm = autofarm.stakedWantTokens(poolId, address(this));
-    uint256 assets = ibToken.debtShareToVal(ibToken.balanceOf(address(this)).add(depositBalanceAutoFarm));
-    uint256 claimableAuto = autofarm.pendingAUTO(poolId, address(this));
-    uint256 currentAuto = IERC20(autoToken).balanceOf(address(this));
+    (uint256 stakedBalance, , , ) = alpacaFarm.userInfo(poolId, address(this));
+    uint256 assets = ibToken.debtShareToVal(ibToken.balanceOf(address(this)).add(stakedBalance));
+    uint256 claimableAlpaca = alpacaFarm.pendingAlpaca(poolId, address(this));
+    uint256 currentAlpaca = IERC20(alpacaToken).balanceOf(address(this));
 
-    uint256 estimatedWant = priceCheck(autoToken, address(want), claimableAuto.add(currentAuto));
+    uint256 estimatedWant = priceCheck(alpacaToken, address(want), claimableAlpaca.add(currentAlpaca));
     uint256 conservativeWant = estimatedWant.mul(9).div(10);      // remaining 10% will be used for compensate offset
 
     return want.balanceOf(address(this)).add(assets).add(conservativeWant);
@@ -100,13 +102,13 @@ contract StrategyAlpacaAutofarm is BaseStrategy {
     if (params.activation == 0) return false;
 
     uint256 wantGasCost = priceCheck(wbnb, address(want), gasCost);
-    uint256 autoGasCost = priceCheck(wbnb, autoToken, gasCost);
+    uint256 alpacaGasCost = priceCheck(wbnb, alpacaToken, gasCost);
 
-    uint256 _claimableAuto = autofarm.pendingAUTO(poolId, address(this));
+    uint256 _claimableAlpaca = alpacaFarm.pendingAlpaca(poolId, address(this));
 
-    if (_claimableAuto > minAutoToSell) {
+    if (_claimableAlpaca > minAlpacaToSell) {
       // trigger harvest if AUTO token balance is worth to do swap
-      if (_claimableAuto.add(IERC20(autoToken).balanceOf(address(this))) > autoGasCost.mul(profitFactor)) {
+      if (_claimableAlpaca.add(IERC20(alpacaToken).balanceOf(address(this))) > alpacaGasCost.mul(profitFactor)) {
         return true;
       }
     }
@@ -127,13 +129,13 @@ contract StrategyAlpacaAutofarm is BaseStrategy {
    */
   function prepareMigration(address _newStrategy) internal override {
     if (!forceMigrate) {
-      autofarm.withdrawAll(poolId);
+      alpacaFarm.withdrawAll(address(this), poolId);
       ibToken.withdraw(IERC20(ibToken).balanceOf(address(this)));
       
-      IERC20 _auto = IERC20(autoToken);
-      uint _autoBalance = _auto.balanceOf(address(this));
-      if (_autoBalance > 0) {
-        _auto.safeTransfer(_newStrategy, _autoBalance);
+      IERC20 _alpaca = IERC20(alpacaToken);
+      uint _alpacaBalance = _alpaca.balanceOf(address(this));
+      if (_alpacaBalance > 0) {
+        _alpaca.safeTransfer(_newStrategy, _alpacaBalance);
       }
     }
   }
@@ -148,19 +150,19 @@ contract StrategyAlpacaAutofarm is BaseStrategy {
     _profit = 0;
     _loss = 0;
 
-    if (autofarm.stakedWantTokens(poolId, address(this)) == 0) {
+    (uint256 stakedBalance, , , ) = alpacaFarm.userInfo(poolId, address(this));
+    if (stakedBalance == 0) {
       uint256 wantBalance = want.balanceOf(address(this));
       _debtPayment = _min(wantBalance, _debtOutstanding);
       return (_profit, _loss, _debtPayment);
     }
 
-    _claimAuto();
-    _disposeAuto();
+    _claimAlpaca();
+    _disposeAlpaca();
 
     uint256 wantBalance = want.balanceOf(address(this));
 
-    uint256 ibTokenBalance = autofarm.stakedWantTokens(poolId, address(this));
-    uint256 assetBalance = ibToken.debtShareToVal(ibTokenBalance).add(wantBalance);
+    uint256 assetBalance = ibToken.debtShareToVal(stakedBalance).add(wantBalance);
     uint256 debt = vault.strategies(address(this)).totalDebt;
 
     if (assetBalance > debt) {
@@ -186,33 +188,37 @@ contract StrategyAlpacaAutofarm is BaseStrategy {
 
   function _withdrawSome(uint256 _amount) internal {
     uint256 _amountShare = ibToken.debtValToShare(_amount);
-    autofarm.withdraw(poolId, _amountShare);
+    alpacaFarm.withdraw(address(this), poolId, _amountShare);
     ibToken.withdraw(IERC20(ibToken).balanceOf(address(this)));
-    _disposeAuto();
+    _disposeAlpaca();
   }
 
-  // claims AUTO reward token
-  function _claimAuto() internal {
-    autofarm.withdraw(poolId, uint256(0));
+  // claims Alpaca reward token
+  function _claimAlpaca() internal {
+    alpacaFarm.harvest(poolId);
   }
 
-  // sell harvested AUTO token
-  function _disposeAuto() internal {
-    uint256 _auto = IERC20(autoToken).balanceOf(address(this));
+  // sell harvested Alpaca token
+  function _disposeAlpaca() internal {
+    uint256 _alpaca = IERC20(alpacaToken).balanceOf(address(this));
 
-    if (_auto > minAutoToSell) {
+    if (_alpaca > minAlpacaToSell) {
       address[] memory path = new address[](3);
-      path[0] = autoToken;
-      path[1] = wbnb;
+      path[0] = alpacaToken;
+      path[1] = busd;
       path[2] = address(want);
 
-      IUniswapV2Router02(uniswapRouter).swapExactTokensForTokens(_auto, uint256(0), path, address(this), now);
+      uint256[] memory amounts = IUniswapV2Router02(uniswapRouter).getAmountsOut(_alpaca, path);
+      uint256 estimatedWant = amounts[amounts.length - 1];
+      uint256 conservativeWant = estimatedWant.mul(9).div(10);      // remaining 10% will be used for compensate offset
+
+      IUniswapV2Router02(uniswapRouter).swapExactTokensForTokens(_alpaca, conservativeWant, path, address(this), now);
     }
   }
 
   function liquidatePosition(uint256 _amountNeeded) internal override returns (uint256 _amountFreed, uint256 _loss) {
-    uint256 staked = autofarm.stakedWantTokens(poolId, address(this));
-    uint256 assets = ibToken.debtShareToVal(staked);
+    (uint256 stakedBalance, , , ) = alpacaFarm.userInfo(poolId, address(this));
+    uint256 assets = ibToken.debtShareToVal(stakedBalance);
 
     uint256 debtOutstanding = vault.debtOutstanding(address(this));
     if (debtOutstanding > assets) {
@@ -246,7 +252,7 @@ contract StrategyAlpacaAutofarm is BaseStrategy {
   }
 
   function setProtectedTokens() internal override {
-    protected[autoToken] = true;
+    protected[alpacaToken] = true;
   }
 
   function _min(uint256 a, uint256 b) internal pure returns (uint256) {

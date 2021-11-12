@@ -30,17 +30,17 @@ contract('alpaca', async([dev, minter, admin, alice, bob]) => {
     console.log('-------------');
     console.log('activated:', dateObj.toISOString());
     console.log('lastReport:', lastReportObj.toISOString());
-    console.log('totalDebt:', totalDebt.toString());
+    console.log('totalDebt:', web3.utils.fromWei(totalDebt.toString()));
     console.log('emergency:', emergency);
-    console.log('totalEstimatedAssets:', totalEstimatedAssets.toString());
-    console.log('creditAvailable:', creditAvailable.toString());
-    console.log('debtOutstanding:', debtOutstanding.toString());
+    console.log('totalEstimatedAssets:', web3.utils.fromWei(totalEstimatedAssets.toString()));
+    console.log('creditAvailable:', web3.utils.fromWei(creditAvailable.toString()));
+    console.log('debtOutstanding:', web3.utils.fromWei(debtOutstanding.toString()));
     console.log('debtRatio:', debtRatio.toString());
-    console.log('totalGain:', totalGain.toString());
-    console.log('totalLoss:', totalLoss.toString());
-    console.log('expectedReturn:', expectedReturn.toString());
-    console.log('performanceFee:', performanceFee.toString());
-    console.log('rateLimit:', rateLimit.toString());
+    console.log('totalGain:', web3.utils.fromWei(totalGain.toString()));
+    console.log('totalLoss:', web3.utils.fromWei(totalLoss.toString()));
+    console.log('expectedReturn:', web3.utils.fromWei(expectedReturn.toString()));
+    console.log('strategyPerformanceFee:', performanceFee.toString());
+    console.log('rateLimit:', web3.utils.fromWei(rateLimit.toString()));
     console.log('***');
   }
 
@@ -59,7 +59,7 @@ contract('alpaca', async([dev, minter, admin, alice, bob]) => {
       from: minter
     });
 
-    this.alpacaStrategy = await StrategyAlpacaAutofarm.new(this.xVault.address, '0x158Da805682BdC8ee32d52833aD41E74bb951E59', 489, {
+    this.alpacaStrategy = await StrategyAlpacaAutofarm.new(this.xVault.address, '0x158Da805682BdC8ee32d52833aD41E74bb951E59', 16, {
       from: minter
     })
     
@@ -79,12 +79,12 @@ contract('alpaca', async([dev, minter, admin, alice, bob]) => {
     const balanceBefore = await this.usdtContract.methods.balanceOf(alice).call();
     
 
-    await this.xVault.addStrategy(this.strategy.address, '50', '50000000000000000', '0');
-    await this.xVault.addStrategy(this.alpacaStrategy.address, '50', '50000000000000000', '0');
+    await this.xVault.addStrategy(this.strategy.address, '50', web3.utils.toWei('0.05'), '0');
+    await this.xVault.addStrategy(this.alpacaStrategy.address, '50', web3.utils.toWei('0.05'), '0');
     
     await report(this.xVault, this.alpacaStrategy);
     
-    const depositedAmount = '100000000000000000000000';
+    const depositedAmount = web3.utils.toWei('100000');
     
     this.usdtContract.methods.approve(this.xVault.address, depositedAmount.toString()).send({
       from: alice
@@ -139,12 +139,21 @@ contract('alpaca', async([dev, minter, admin, alice, bob]) => {
     console.log('apy:', apy.toString());
 
     const balanceAfter = await this.usdtContract.methods.balanceOf(alice).call();
-    console.log('balanceBefore:', balanceBefore);
-    console.log('balanceAfter: ', balanceAfter)
+    console.log('balanceBefore:', web3.utils.fromWei(balanceBefore));
+    console.log('balanceAfter: ', web3.utils.fromWei(balanceAfter))
 
     share = await this.xVault.balanceOf(alice);
+    console.log('alice xtoken balance:', share.toString())
 
     await report(this.xVault, this.alpacaStrategy);
+
+    const fee = await this.xVault.performanceFee();
+    console.log('vault fee:', fee.toString());
+    const totalSupply = await this.xVault.totalSupply();
+    console.log('vault total supply:', web3.utils.fromWei(totalSupply.toString()));
+
+    const feeAmount = await this.xVault.balanceOf('0x143afc138978Ad681f7C7571858FAAA9D426CecE');
+    console.log('fee Amount:', web3.utils.fromWei(feeAmount.toString()))
     
   });
 
