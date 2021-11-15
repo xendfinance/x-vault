@@ -59,7 +59,10 @@ contract('alpaca', async([dev, minter, admin, alice, bob]) => {
       from: minter
     });
 
-    this.alpacaStrategy = await StrategyAlpacaAutofarm.new(this.xVault.address, '0x158Da805682BdC8ee32d52833aD41E74bb951E59', 16, {
+    const path = [
+      "0x8F0528cE5eF7B51152A59745bEfDD91D97091d2F", "0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56", "0x55d398326f99059ff775485246999027b3197955"
+    ]
+    this.alpacaStrategy = await StrategyAlpacaAutofarm.new(this.xVault.address, '0x158Da805682BdC8ee32d52833aD41E74bb951E59', 16, path, {
       from: minter
     })
     

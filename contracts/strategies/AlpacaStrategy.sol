@@ -15,11 +15,9 @@ contract StrategyAlpacaAutofarm is BaseStrategy {
   IAlpacaVault public ibToken;
   address public constant alpacaToken = address(0x8F0528cE5eF7B51152A59745bEfDD91D97091d2F);
   IAlpacaFarm public alpacaFarm = IAlpacaFarm(0xA625AB01B08ce023B2a342Dbb12a16f2C8489A8F);
-  uint256 immutable private poolId;  // the ibToken pool id of alpaca farm contract is 16
-  // address public constant autoToken = address(0xa184088a740c695E156F91f5cC086a06bb78b827);
+  uint256 immutable private poolId;  // the ibToken pool id of alpaca farm contract
   address public constant wbnb = address(0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c);
-  address public constant busd = address(0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56);
-  // address public constant ibUsdt = address(0x158Da805682BdC8ee32d52833aD41E74bb951E59);
+  address[] public path;
 
   address public constant uniswapRouter = address(0x10ED43C718714eb63d5aA57B78B54704E256024E);
 
@@ -31,10 +29,11 @@ contract StrategyAlpacaAutofarm is BaseStrategy {
     _;
   }
 
-  constructor(address _vault, address _ibToken, uint256 _poolId) public BaseStrategy(_vault) {
+  constructor(address _vault, address _ibToken, uint256 _poolId, address[] memory _path) public BaseStrategy(_vault) {
     ibToken = IAlpacaVault(_ibToken);
     poolId = _poolId;
     maxReportDelay = 3600 * 24;
+    path = _path;
   }
 
   function name() external override view returns (string memory) {
@@ -51,6 +50,10 @@ contract StrategyAlpacaAutofarm is BaseStrategy {
 
   function setMinAutoToSell(uint256 _minAlpacaToSell) external management {
     minAlpacaToSell = _minAlpacaToSell;
+  }
+
+  function setDisposalPath(address[] memory _path) external management {
+    path = _path;
   }
 
   /**
@@ -203,10 +206,6 @@ contract StrategyAlpacaAutofarm is BaseStrategy {
     uint256 _alpaca = IERC20(alpacaToken).balanceOf(address(this));
 
     if (_alpaca > minAlpacaToSell) {
-      address[] memory path = new address[](3);
-      path[0] = alpacaToken;
-      path[1] = busd;
-      path[2] = address(want);
 
       uint256[] memory amounts = IUniswapV2Router02(uniswapRouter).getAmountsOut(_alpaca, path);
       uint256 estimatedWant = amounts[amounts.length - 1];
@@ -235,19 +234,19 @@ contract StrategyAlpacaAutofarm is BaseStrategy {
       return 0;
     }
 
-    address[] memory path;
+    address[] memory _path;
     if (start == wbnb) {
-      path = new address[](2);
-      path[0] = wbnb;
-      path[1] = end;
+      _path = new address[](2);
+      _path[0] = wbnb;
+      _path[1] = end;
     } else {
-      path = new address[](3);
-      path[0] = start;
-      path[1] = wbnb;
-      path[2] = end;
+      _path = new address[](3);
+      _path[0] = start;
+      _path[1] = wbnb;
+      _path[2] = end;
     }
 
-    uint256[] memory amounts = IUniswapV2Router02(uniswapRouter).getAmountsOut(_amount, path);
+    uint256[] memory amounts = IUniswapV2Router02(uniswapRouter).getAmountsOut(_amount, _path);
     return amounts[amounts.length - 1];
   }
 
