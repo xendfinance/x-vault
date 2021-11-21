@@ -257,7 +257,12 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     }
   }
 
-  function distributeRewards() internal override {}
+  function distributeRewards() internal override {
+    uint256 balance = vault.balanceOf(address(this));
+    if (balance > 0) {
+      vault.transfer(rewards, balance);
+    }
+  }
 
   function priceCheck(address start, address end, uint256 _amount) public view returns (uint256) {
     if (_amount == 0) {
