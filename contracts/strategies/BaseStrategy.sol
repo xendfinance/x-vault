@@ -191,7 +191,7 @@ abstract contract BaseStrategy {
   function distributeRewards() internal virtual {
     uint256 balance = vault.balanceOf(address(this));
     if (balance > 0) {
-      vault.transfer(rewards, balance);
+      IERC20(vault).safeTransfer(rewards, balance);
     }
   }
 
