@@ -680,8 +680,11 @@ contract XVault is ERC20, ReentrancyGuard {
     strategies[_strategy].totalLoss = strategies[_strategy].totalLoss.add(loss);
     strategies[_strategy].totalDebt = _totalDebt.sub(loss);
 
+    // reduce debtRatio if loss happens
     uint256 _debtRatio = strategies[_strategy].debtRatio;
-    strategies[_strategy].debtRatio = _debtRatio.sub(_min(loss.mul(MAX_BPS).div(_totalAssets()), _debtRatio));     // reduce debtRatio if loss happens
+    uint256 ratioChange = _min(loss.mul(debtRatio).div(_totalAssets()), _debtRatio);
+    strategies[_strategy].debtRatio = _debtRatio.sub(ratioChange);
+    debtRatio = debtRatio.sub(ratioChange);
 
     totalDebt = totalDebt.sub(loss);
   }

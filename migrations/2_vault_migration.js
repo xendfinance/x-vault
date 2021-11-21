@@ -22,6 +22,6 @@ const Strategy = artifacts.require("Strategy");
 
 module.exports = function (deployer) {
     deployer.deploy(XVault, usdtAddress, adminAddress, adminAddress).then(function () {
-      return deployer.deploy(Strategy, XVault.address, vUsdtAddress)
+      return deployer.deploy(Strategy, XVault.address, vUsdtAddress, '3')
     });
 };
