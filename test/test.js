@@ -3,7 +3,7 @@ const { expectRevert, time } = require('@openzeppelin/test-helpers');
 const BN = require('bn.js');
 
 const XVault = artifacts.require('XVault');
-const Strategy = artifacts.require('Strategy');
+const Strategy = artifacts.require('StrategyUgoHawkVenusUSDTFarm');
 const USDT = require('./abi/USDT.json');
 
 contract('xVault', async([dev, minter, admin, alice, bob]) => {
@@ -143,6 +143,71 @@ contract('xVault', async([dev, minter, admin, alice, bob]) => {
   //   // assert.equal(, 100000000000, 'harvested amount is smaller than deposited amount');
   // });
 
+  // it("migrate strategy", async () => {
+    
+  //   const balanceBefore = await this.usdtContract.methods.balanceOf(alice).call();
+  //   console.log('balanceBefore:', balanceBefore);
+
+  //   await this.xVault.addStrategy(this.strategy.address, '10000', '50000000000000000', '0');
+  //   // await report(this.xVault, this.strategy);
+    
+  //   const depositedAmount = '100000000000000000000';
+    
+  //   this.usdtContract.methods.approve(this.xVault.address, depositedAmount.toString()).send({
+  //     from: alice
+  //   });
+
+  //   let apy = await this.xVault.getApy();
+  //   console.log('apy:', apy.toString());
+
+  //   await this.xVault.deposit(depositedAmount.toString(), {
+  //     from: alice
+  //   });
+  //   console.log(`deposited ${depositedAmount} tokens`);
+
+  //   await time.increase(time.duration.days(5));
+  //   console.log('5 days passed')
+
+  //   await this.strategy.harvest({
+  //     from: minter
+  //   });
+  //   console.log('harvest called')
+    
+
+  //   this.newStrategy = await Strategy.new(this.xVault.address, this.vUSDTAddress, '4', {
+  //     from: minter
+  //   });
+  //   console.log('new strategy deployed')
+
+  //   await this.strategy.setForceMigrate(true, {
+  //     from: dev
+  //   })
+  //   console.log('set force migration')
+
+  //   await this.xVault.migrateStrategy(this.strategy.address, this.newStrategy.address, {
+  //     from: dev
+  //   })
+  //   console.log('migration done')
+
+  //   this.usdtContract.methods.approve(this.xVault.address, depositedAmount.toString()).send({
+  //     from: bob
+  //   });
+  //   await this.xVault.deposit(depositedAmount.toString(), {
+  //     from: bob
+  //   });
+  //   console.log(`deposited ${depositedAmount} tokens`);
+
+  //   await time.increase(time.duration.days(5));
+  //   console.log('5 days passed')
+
+  //   await this.strategy.harvest({
+  //     from: minter
+  //   });
+  //   console.log('harvest called')
+    
+    
+  // });
+
   it("add strategy, deposit and trigger tend, withdraw", async () => {
     
     const balanceBefore = await this.usdtContract.methods.balanceOf(alice).call();
@@ -191,6 +256,18 @@ contract('xVault', async([dev, minter, admin, alice, bob]) => {
     //   await time.increase(time.duration.days(1));
     // }
 
+    await this.strategy.setFlashLoan(false, {
+      from: minter
+    })
+    console.log('setFlashLoan to false')
+
+    this.usdtContract.methods.approve(this.xVault.address, depositedAmount.toString()).send({
+      from: bob
+    });
+    await this.xVault.deposit(depositedAmount.toString(), {
+      from: bob
+    });
+    
     await this.strategy.harvest({
       from: minter
     });

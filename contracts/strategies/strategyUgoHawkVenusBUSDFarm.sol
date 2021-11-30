@@ -8,10 +8,11 @@ import "./BaseStrategy.sol";
 import "../interfaces/venus/VBep20I.sol";
 import "../interfaces/venus/UnitrollerI.sol";
 import "../interfaces/uniswap/IUniswapV2Router.sol";
-import "../interfaces/flashloan/IFlashloanReceiver.sol";
+import "../interfaces/flashloan/ERC3156FlashLenderInterface.sol";
+import "../interfaces/flashloan/ERC3156FlashBorrowerInterface.sol";
 
 
-contract Strategy is BaseStrategy, IFlashLoanReceiver {
+contract StrategyUgoHawkVenusBUSDFarm is BaseStrategy, ERC3156FlashBorrowerInterface {
   using SafeERC20 for IERC20;
   using Address for address;
   using SafeMath for uint256;
@@ -241,6 +242,13 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
    * Do anything necessary to prepare this Strategy for migration, such as transferring any reserve.
    */
   function prepareMigration(address _newStrategy) internal override {
+    
+    IERC20 _xvs = IERC20(xvs);
+    uint256 _xvsBalance = _xvs.balanceOf(address(this));
+    if (_xvsBalance > 0) {
+      _xvs.safeTransfer(_newStrategy, _xvsBalance);
+    }
+
     if (!forceMigrate) {
       (uint256 deposits, uint256 borrows) = getLivePosition();
       _withdrawSome(deposits.sub(borrows));
@@ -249,10 +257,10 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
 
       require(borrowBalance < 10_000, "DELEVERAGE_FIRST");
 
-      IERC20 _xvs = IERC20(xvs);
-      uint _xvsBalance = _xvs.balanceOf(address(this));
-      if (_xvsBalance > 0) {
-        _xvs.safeTransfer(_newStrategy, _xvsBalance);
+    } else {
+      uint256 vTokenBalance = vToken.balanceOf(address(this));
+      if (vTokenBalance > 0) {
+        vToken.transfer(_newStrategy, vTokenBalance);
       }
     }
   }
@@ -478,7 +486,7 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
     uint256 amount = amountDesired;
     bytes memory data = abi.encode(deficit, amount);
 
-    ICTokenFlashloan(crWant).flashLoan(address(this), amount, data);
+    ERC3156FlashLenderInterface(crWant).flashLoan(this, address(this), amount, data);
     emit Leverage(amountDesired, amount, deficit, crWant);
 
     return amount;
@@ -573,21 +581,23 @@ contract Strategy is BaseStrategy, IFlashLoanReceiver {
   /**
    * @notice
    *  called by cream flash loan contract
-   * @param sender the address of flash loan caller
-   * @param underlying the address of token we borrowed
+   * @param initiator the address of flash loan caller
+   * @param token the address of token we borrowed
    * @param amount the amount borrowed
    * @param fee flash loan fee
-   * @param params param data sent when loaning
+   * @param data param data sent when loaning
    */
-  function executeOperation(address sender, address underlying, uint amount, uint fee, bytes calldata params) override external {
+  function onFlashLoan(address initiator, address token, uint256 amount, uint256 fee, bytes calldata data) override external returns (bytes32) {
     // uint currentBalance = IERC20(underlying).balanceOf(address(this));
-    require(sender == address(this), "caller is not this contract");
+    require(initiator == address(this), "caller is not this contract");
+    (bool deficit, uint256 borrowAmount) = abi.decode(data, (bool, uint256));
+    require(borrowAmount == amount, "encoded data (borrowAmount) does not match");
     require(msg.sender == crWant, "Not Flash Loan Provider");
-    (bool deficit, ) = abi.decode(params, (bool, uint256));
-
-    _loanLogic(deficit, amount, amount + fee);
-    IERC20(underlying).safeTransfer(crWant, amount + fee);
     
+    _loanLogic(deficit, amount, amount + fee);
+
+    IERC20(token).approve(msg.sender, amount + fee);
+    return keccak256("ERC3156FlashBorrowerInterface.onFlashLoan");
   }
 
   /**
