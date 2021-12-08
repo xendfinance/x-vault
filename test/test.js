@@ -5,6 +5,7 @@ const BN = require('bn.js');
 const XVault = artifacts.require('XVault');
 const Strategy = artifacts.require('StrategyUgoHawkVenusUSDTFarm');
 const USDT = require('./abi/USDT.json');
+const ERC20 = require('./abi/ERC20.json');
 
 contract('xVault', async([dev, minter, admin, alice, bob]) => {
   
@@ -208,22 +209,103 @@ contract('xVault', async([dev, minter, admin, alice, bob]) => {
     
   // });
 
-  it("add strategy, deposit and trigger tend, withdraw", async () => {
+  // it("add strategy, deposit and trigger tend, withdraw", async () => {
+    
+  //   const balanceBefore = await this.usdtContract.methods.balanceOf(alice).call();
+  //   console.log('balanceBefore:', balanceBefore);
+
+  //   await this.xVault.addStrategy(this.strategy.address, '10000', '50000000000000000', '0');
+  //   // await report(this.xVault, this.strategy);
+    
+  //   const depositedAmount = '100000000000000000000';
+    
+  //   this.usdtContract.methods.approve(this.xVault.address, depositedAmount.toString()).send({
+  //     from: alice
+  //   });
+
+  //   let apy = await this.xVault.getApy();
+  //   console.log('apy:', apy.toString());
+
+  //   await this.xVault.deposit(depositedAmount.toString(), {
+  //     from: alice
+  //   });
+
+  //   await time.increase(time.duration.days(5));
+
+  //   await this.strategy.harvest({
+  //     from: minter
+  //   });
+
+  //   this.usdtContract.methods.approve(this.xVault.address, depositedAmount.toString()).send({
+  //     from: bob
+  //   });
+  //   await this.xVault.deposit(depositedAmount.toString(), {
+  //     from: bob
+  //   });
+
+  //   await time.increase(time.duration.days(5));
+  //   await this.strategy.harvest({
+  //     from: minter
+  //   });
+  //   await time.increase(time.duration.days(5));
+  //   // await report(this.xVault, this.strategy);
+
+  //   // for (i = 0; i < 10; i++) {
+  //   //   await this.strategy.tend({
+  //   //     from: minter
+  //   //   });
+  //   //   await time.increase(time.duration.days(1));
+  //   // }
+
+  //   await this.strategy.setFlashLoan(false, {
+  //     from: minter
+  //   })
+  //   console.log('setFlashLoan to false')
+
+  //   this.usdtContract.methods.approve(this.xVault.address, depositedAmount.toString()).send({
+  //     from: bob
+  //   });
+  //   await this.xVault.deposit(depositedAmount.toString(), {
+  //     from: bob
+  //   });
+    
+  //   await this.strategy.harvest({
+  //     from: minter
+  //   });
+    
+  //   // await report(this.xVault, this.strategy);
+
+  //   let share = await this.xVault.balanceOf(alice);
+  //   await this.xVault.withdraw(share.toString(), alice, 1, {
+  //     from: alice
+  //   });
+
+  //   apy = await this.xVault.getApy();
+  //   console.log('apy:', apy.toString());
+
+  //   const balanceAfter = await this.usdtContract.methods.balanceOf(alice).call();
+
+  //   share = await this.xVault.balanceOf(alice);
+
+  //   await report(this.xVault, this.strategy);
+
+  //   await this.xVault.updateStrategyDebtRatio(this.strategy.address, 10000);
+    
+  // });
+
+  it("add strategy, deposit and set collateral as zero, harvest", async () => {
     
     const balanceBefore = await this.usdtContract.methods.balanceOf(alice).call();
     console.log('balanceBefore:', balanceBefore);
 
     await this.xVault.addStrategy(this.strategy.address, '10000', '50000000000000000', '0');
-    // await report(this.xVault, this.strategy);
     
-    const depositedAmount = '100000000000000000000';
+    // const depositedAmount = '100000000000000000000';
+    const depositedAmount = web3.utils.toWei('100');
     
-    this.usdtContract.methods.approve(this.xVault.address, depositedAmount.toString()).send({
+    this.usdtContract.methods.approve(this.xVault.address, web3.utils.toWei('1000000')).send({
       from: alice
     });
-
-    let apy = await this.xVault.getApy();
-    console.log('apy:', apy.toString());
 
     await this.xVault.deposit(depositedAmount.toString(), {
       from: alice
@@ -231,65 +313,44 @@ contract('xVault', async([dev, minter, admin, alice, bob]) => {
 
     await time.increase(time.duration.days(5));
 
+    // await this.strategy.setFlashLoan(false, {
+    //   from: minter
+    // })
+    
+    // await this.strategy.setCollateralTarget(0, {
+    //   from: minter
+    // })
+    await this.strategy.setCollateralTarget(web3.utils.toWei('0.01'), {
+      from: minter
+    })
+
     await this.strategy.harvest({
       from: minter
     });
-
-    this.usdtContract.methods.approve(this.xVault.address, depositedAmount.toString()).send({
-      from: bob
-    });
-    await this.xVault.deposit(depositedAmount.toString(), {
-      from: bob
-    });
-
-    await time.increase(time.duration.days(5));
-    await this.strategy.harvest({
-      from: minter
-    });
-    await time.increase(time.duration.days(5));
-    // await report(this.xVault, this.strategy);
-
-    // for (i = 0; i < 10; i++) {
-    //   await this.strategy.tend({
-    //     from: minter
-    //   });
-    //   await time.increase(time.duration.days(1));
-    // }
 
     await this.strategy.setFlashLoan(false, {
       from: minter
     })
-    console.log('setFlashLoan to false')
 
-    this.usdtContract.methods.approve(this.xVault.address, depositedAmount.toString()).send({
-      from: bob
-    });
     await this.xVault.deposit(depositedAmount.toString(), {
-      from: bob
-    });
-    
-    await this.strategy.harvest({
-      from: minter
-    });
-    
-    // await report(this.xVault, this.strategy);
-
-    let share = await this.xVault.balanceOf(alice);
-    await this.xVault.withdraw(share.toString(), alice, 1, {
       from: alice
     });
 
-    apy = await this.xVault.getApy();
-    console.log('apy:', apy.toString());
+    await time.increase(time.duration.days(5));
 
-    const balanceAfter = await this.usdtContract.methods.balanceOf(alice).call();
+    await this.strategy.harvest({
+      from: minter
+    });
 
-    share = await this.xVault.balanceOf(alice);
-
-    await report(this.xVault, this.strategy);
-
-    await this.xVault.updateStrategyDebtRatio(this.strategy.address, 10000);
+    this.vToken = new web3.eth.Contract(ERC20, this.vUSDTAddress);
+    const vTokenBalance = await this.vToken.methods.balanceOf(this.strategy.address).call();
     
+
+    console.log('vTokenBalance:', vTokenBalance)
+
+    const usdtBalance = await this.usdtContract.methods.balanceOf(this.strategy.address).call();
+    console.log('usdtBalaanc:', usdtBalance)
+
   });
 
 

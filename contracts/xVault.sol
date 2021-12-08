@@ -329,6 +329,7 @@ contract XVault is ERC20, ReentrancyGuard {
     address recipient,
     uint256 maxLoss     // if 1, 0.01%
   ) public nonReentrant returns (uint256) {
+    tokenBalance = token.balanceOf(address(this));
     uint256 shares = maxShare;
     if (maxShare == 0) {
       shares = balanceOf(msg.sender);
@@ -340,9 +341,8 @@ contract XVault is ERC20, ReentrancyGuard {
     require(shares <= balanceOf(msg.sender), "share should be smaller than their own");
     
     uint256 value = _shareValue(shares);
+    uint256 totalLoss = 0;
     if (value > token.balanceOf(address(this))) {
-      
-      uint256 totalLoss = 0;
       
       for(uint i = 0; i < withdrawalQueue.length; i++) {
         address strategy = withdrawalQueue[i];
@@ -370,7 +370,6 @@ contract XVault is ERC20, ReentrancyGuard {
         totalDebt = totalDebt.sub(withdrawn.add(loss));
       }
 
-      require(totalLoss <= maxLoss.mul(value.add(totalLoss)).div(MAX_BPS), "revert if totalLoss is more than permitted");
     }
 
     if (value > token.balanceOf(address(this))) {
@@ -380,6 +379,7 @@ contract XVault is ERC20, ReentrancyGuard {
     
     _burn(msg.sender, shares);
     
+    require(totalLoss <= maxLoss.mul(value.add(totalLoss)).div(MAX_BPS), "revert if totalLoss is more than permitted");
     token.safeTransfer(recipient, value);
     tokenBalance = tokenBalance.sub(value);
     emit Withdraw(recipient, value);
@@ -519,6 +519,7 @@ contract XVault is ERC20, ReentrancyGuard {
     require(strategies[_strategy].debtRatio > 0, "the strategy already revoked");
     debtRatio = debtRatio.sub(strategies[_strategy].debtRatio);
     strategies[_strategy].debtRatio = 0;
+    tokenBalance = token.balanceOf(address(this));
     emit StrategyRevoked(_strategy);
   }
 
@@ -569,7 +570,7 @@ contract XVault is ERC20, ReentrancyGuard {
    *    The anticipated amount `strategy` should make on its investment since its last report.
    */
   function expectedReturn(address _strategy) external view returns (uint256) {
-    _expectedReturn(_strategy);
+    return _expectedReturn(_strategy);
   }
 
   function _expectedReturn(address _strategy) internal view returns (uint256) {
