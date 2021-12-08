@@ -100,6 +100,7 @@ abstract contract BaseStrategy {
     strategist = msg.sender;
     rewards = msg.sender;
     keeper = msg.sender;
+    setProtectedTokens();
   }
 
   function setStrategist(address _strategist) external onlyAuthorized {
