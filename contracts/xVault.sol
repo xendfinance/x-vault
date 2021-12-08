@@ -252,8 +252,10 @@ contract XVault is ERC20, ReentrancyGuard {
   function deposit(uint256 _amount) public nonReentrant returns (uint256) {
     require(emergencyShutdown != true, "in status of Emergency Shutdown");
     uint256 amount = _amount;
-    if (amount == 0) {
+    if (amount == uint256(-1)) {
       amount = _min(depositLimit.sub(_totalAssets()), token.balanceOf(msg.sender));
+    } else {
+      require(_totalAssets().add(amount) <= depositLimit, "exceeds deposit limit");
     }
     
     require(amount > 0, "deposit amount should be bigger than zero");
