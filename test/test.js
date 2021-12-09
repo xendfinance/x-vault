@@ -4,6 +4,9 @@ const BN = require('bn.js');
 
 const XVault = artifacts.require('XVault');
 const Strategy = artifacts.require('StrategyUgoHawkVenusUSDTFarm');
+const NewStrategy = artifacts.require('StrategyUgoHawkVenusUSDCFarm');
+const VaultProxy = artifacts.require('VaultProxy');
+const VaultProxyAdmin = artifacts.require('VaultProxyAdmin');
 const USDT = require('./abi/USDT.json');
 const ERC20 = require('./abi/ERC20.json');
 
@@ -46,18 +49,67 @@ contract('xVault', async([dev, minter, admin, alice, bob]) => {
     console.log('***');
   }
 
+  // beforeEach(async () => {
+
+  //   this.usdtContract = new web3.eth.Contract(USDT, '0x55d398326f99059ff775485246999027b3197955');
+  //   this.vUSDTAddress = '0xfd5840cd36d94d7229439859c0112a4185bc0255';
+
+  //   this.xVault = await XVault.new(this.usdtContract.options.address, dev, '0x143afc138978Ad681f7C7571858FAAA9D426CecE', {
+  //     from: minter,
+  //   });
+  //   const vaultName = await this.xVault.symbol();
+  //   console.log(vaultName);
+
+  //   this.strategy = await Strategy.new(this.xVault.address, this.vUSDTAddress, '3', {
+  //     from: minter
+  //   });
+    
+  //   const usdtHolder = '0xefdca55e4bce6c1d535cb2d0687b5567eef2ae83';
+  //   await this.usdtContract.methods.transfer(alice, "100000000000000000000000").send({
+  //     from: usdtHolder
+  //   });
+  //   await this.usdtContract.methods.transfer(bob, "100000000000000000000000").send({
+  //     from: usdtHolder
+  //   });
+
+  // });
+
+  // When using proxy
   beforeEach(async () => {
+
+    console.log('dev:', dev)
+    console.log('minter:', minter)
 
     this.usdtContract = new web3.eth.Contract(USDT, '0x55d398326f99059ff775485246999027b3197955');
     this.vUSDTAddress = '0xfd5840cd36d94d7229439859c0112a4185bc0255';
 
-    this.xVault = await XVault.new(this.usdtContract.options.address, dev, '0x143afc138978Ad681f7C7571858FAAA9D426CecE', {
+    this.xVault = await XVault.new({
       from: minter,
     });
-    const vaultName = await this.xVault.symbol();
-    console.log(vaultName);
 
-    this.strategy = await Strategy.new(this.xVault.address, this.vUSDTAddress, '3', {
+    this.newXVault = await XVault.new({
+      from: minter,
+    });
+
+    this.proxyAdmin = await VaultProxyAdmin.new({
+      from: minter
+    })
+
+    this.vaultProxy = await VaultProxy.new(this.xVault.address, this.proxyAdmin.address, "0x", {
+      from: minter
+    })
+
+    this.vaultProxyInstance = await XVault.at(this.vaultProxy.address)
+    
+    await this.vaultProxyInstance.initialize(this.usdtContract.options.address, dev, '0x143afc138978Ad681f7C7571858FAAA9D426CecE', {
+      from: minter
+    })
+
+
+    const vaultName = await this.vaultProxyInstance.symbol();
+    console.log('vaultName:', vaultName);
+
+    this.strategy = await Strategy.new(this.vaultProxyInstance.address, this.vUSDTAddress, '3', {
       from: minter
     });
     
@@ -298,18 +350,30 @@ contract('xVault', async([dev, minter, admin, alice, bob]) => {
     const balanceBefore = await this.usdtContract.methods.balanceOf(alice).call();
     console.log('balanceBefore:', balanceBefore);
 
-    await this.xVault.addStrategy(this.strategy.address, '10000', '50000000000000000', '0');
+    await this.vaultProxyInstance.addStrategy(this.strategy.address, '10000', '50000000000000000', '0', {
+      from: dev
+    });
+
+    await this.vaultProxyInstance.setDepositLimit(balanceBefore.toString(), {
+      from: dev
+    });
+
+    const max_bps = await this.vaultProxyInstance.MAX_BPS()
+    console.log('max_bps:', max_bps.toString())
     
     // const depositedAmount = '100000000000000000000';
     const depositedAmount = web3.utils.toWei('100');
     
-    this.usdtContract.methods.approve(this.xVault.address, web3.utils.toWei('1000000')).send({
+    this.usdtContract.methods.approve(this.vaultProxyInstance.address, web3.utils.toWei('1000000')).send({
       from: alice
     });
 
-    await this.xVault.deposit(depositedAmount.toString(), {
+    await this.vaultProxyInstance.deposit(depositedAmount.toString(), {
       from: alice
     });
+
+    const totalSupply = await this.vaultProxyInstance.totalSupply()
+    console.log('totalSupply', totalSupply.toString())
 
     await time.increase(time.duration.days(5));
 
@@ -332,7 +396,7 @@ contract('xVault', async([dev, minter, admin, alice, bob]) => {
       from: minter
     })
 
-    await this.xVault.deposit(depositedAmount.toString(), {
+    await this.vaultProxyInstance.deposit(depositedAmount.toString(), {
       from: alice
     });
 
@@ -341,6 +405,10 @@ contract('xVault', async([dev, minter, admin, alice, bob]) => {
     await this.strategy.harvest({
       from: minter
     });
+
+    await this.proxyAdmin.upgrade(this.vaultProxyInstance.address, this.newXVault.address, {
+      from: minter
+    })
 
     this.vToken = new web3.eth.Contract(ERC20, this.vUSDTAddress);
     const vTokenBalance = await this.vToken.methods.balanceOf(this.strategy.address).call();

@@ -5,6 +5,8 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Context.sol";
+import "@openzeppelin/contracts/proxy/Initializable.sol";
 
 interface Strategy {
   function want() external view returns (address);
@@ -19,15 +21,27 @@ interface ITreasury {
 }
 
 
-contract XVault is ERC20, ReentrancyGuard {
-  using SafeERC20 for ERC20;
+contract XVault is IERC20, Context, ReentrancyGuard, Initializable {
+  using SafeERC20 for IERC20;
   using Address for address;
   using SafeMath for uint256;
   
+  // ERC20 standard variables
+  mapping (address => uint256) private _balances;
+
+  mapping (address => mapping (address => uint256)) private _allowances;
+
+  uint256 private _totalSupply;
+
+  string private _name;
+  string private _symbol;
+  uint8 private _decimals;
+  
+  // Vault variables
   address public guardian;
   address public governance;
   address public management;
-  ERC20 public immutable token;
+  IERC20 public token;
 
 
   struct StrategyParams {
@@ -56,8 +70,8 @@ contract XVault is ERC20, ReentrancyGuard {
   uint256 public debtRatio;
   uint256 public totalDebt;   // Amount of tokens that all strategies have borrowed
   uint256 public lastReport;  // block.timestamp of last report
-  uint256 public immutable activation;  // block.timestamp of contract deployment
-  uint256 private lastValuePerShare = 1000000000;
+  uint256 public activation;  // block.timestamp of contract initialize
+  uint256 private lastValuePerShare;
 
   ITreasury public treasury;    // reward contract where governance fees are sent to
   uint256 public managementFee;
@@ -126,18 +140,21 @@ contract XVault is ERC20, ReentrancyGuard {
     _;
   }
 
-  constructor(
+  constructor() public { }
+
+  function initialize(
     address _token,
     address _governance,
     ITreasury _treasury
-  ) 
-  public ERC20(
-    string(abi.encodePacked("Xend ", ERC20(_token).name())),
-    string(abi.encodePacked("xv", ERC20(_token).symbol()))
-  ){
+  ) public initializer {
+
+    _name = string(abi.encodePacked("Xend ", ERC20(_token).name()));
+    _symbol = string(abi.encodePacked("xv", ERC20(_token).symbol()));
+    _decimals = ERC20(_token).decimals();
+    
     require(_governance != address(0), "governance address can't be zero");
     require(address(_treasury) != address(0), "treasury address can't be zero");
-    token = ERC20(_token);
+    token = IERC20(_token);
     guardian = msg.sender;
     governance = _governance;
     management = _governance;
@@ -148,9 +165,157 @@ contract XVault is ERC20, ReentrancyGuard {
     lastReport = block.timestamp;
     activation = block.timestamp;
 
-    _setupDecimals(ERC20(_token).decimals());
+    lastValuePerShare = 1000000000;
+    
   }
 
+  /////////////////////////////////
+  /// ERC20 standard functions  ///
+  /////////////////////////////////
+
+  /**
+   * @dev Returns the name of the token.
+   */
+  function name() public view returns (string memory) {
+    return _name;
+  }
+
+  /**
+   * @dev Returns the symbol of the token, usually a shorter version of the
+   * name.
+   */
+  function symbol() public view returns (string memory) {
+    return _symbol;
+  }
+
+  function decimals() public view returns (uint8) {
+    return _decimals;
+  }
+
+  /**
+   * @dev See {IERC20-totalSupply}.
+   */
+  function totalSupply() public view override returns (uint256) {
+    return _totalSupply;
+  }
+
+  /**
+   * @dev See {IERC20-balanceOf}.
+   */
+  function balanceOf(address account) public view override returns (uint256) {
+    return _balances[account];
+  }
+
+  /**
+   * @dev See {IERC20-transfer}.
+   *
+   * Requirements:
+   *
+   * - `recipient` cannot be the zero address.
+   * - the caller must have a balance of at least `amount`.
+   */
+  function transfer(address recipient, uint256 amount) public override returns (bool) {
+    _transfer(_msgSender(), recipient, amount);
+    return true;
+  }
+
+  /**
+   * @dev See {IERC20-allowance}.
+   */
+  function allowance(address owner, address spender) public view override returns (uint256) {
+    return _allowances[owner][spender];
+  }
+
+  /**
+   * @dev See {IERC20-approve}.
+   *
+   * Requirements:
+   *
+   * - `spender` cannot be the zero address.
+   */
+  function approve(address spender, uint256 amount) public override returns (bool) {
+    _approve(_msgSender(), spender, amount);
+    return true;
+  }
+
+  /**
+   * @dev See {IERC20-transferFrom}.
+   *
+   * Emits an {Approval} event indicating the updated allowance. This is not
+   * required by the EIP. See the note at the beginning of {ERC20}.
+   *
+   * Requirements:
+   *
+   * - `sender` and `recipient` cannot be the zero address.
+   * - `sender` must have a balance of at least `amount`.
+   * - the caller must have allowance for ``sender``'s tokens of at least
+   * `amount`.
+   */
+  function transferFrom(address sender, address recipient, uint256 amount) public override returns (bool) {
+    _transfer(sender, recipient, amount);
+    _approve(sender, _msgSender(), _allowances[sender][_msgSender()].sub(amount, "ERC20: transfer amount exceeds allowance"));
+    return true;
+  }
+
+  function increaseAllowance(address spender, uint256 addedValue) public returns (bool) {
+    _approve(_msgSender(), spender, _allowances[_msgSender()][spender].add(addedValue));
+    return true;
+  }
+
+  function decreaseAllowance(address spender, uint256 subtractedValue) public returns (bool) {
+    _approve(_msgSender(), spender, _allowances[_msgSender()][spender].sub(subtractedValue, "ERC20: decreased allowance below zero"));
+    return true;
+  }
+
+  function _transfer(address sender, address recipient, uint256 amount) internal {
+    require(sender != address(0), "ERC20: transfer from the zero address");
+    require(recipient != address(0), "ERC20: transfer to the zero address");
+
+    _beforeTokenTransfer(sender, recipient, amount);
+
+    _balances[sender] = _balances[sender].sub(amount, "ERC20: transfer amount exceeds balance");
+    _balances[recipient] = _balances[recipient].add(amount);
+    emit Transfer(sender, recipient, amount);
+  }
+
+  function _mint(address account, uint256 amount) internal {
+    require(account != address(0), "ERC20: mint to the zero address");
+
+    _beforeTokenTransfer(address(0), account, amount);
+
+    _totalSupply = _totalSupply.add(amount);
+    _balances[account] = _balances[account].add(amount);
+    emit Transfer(address(0), account, amount);
+  }
+
+  function _burn(address account, uint256 amount) internal {
+    require(account != address(0), "ERC20: burn from the zero address");
+
+    _beforeTokenTransfer(account, address(0), amount);
+
+    _balances[account] = _balances[account].sub(amount, "ERC20: burn amount exceeds balance");
+    _totalSupply = _totalSupply.sub(amount);
+    emit Transfer(account, address(0), amount);
+  }
+
+  function _approve(address owner, address spender, uint256 amount) internal {
+    require(owner != address(0), "ERC20: approve from the zero address");
+    require(spender != address(0), "ERC20: approve to the zero address");
+
+    _allowances[owner][spender] = amount;
+    emit Approval(owner, spender, amount);
+  }
+
+  function _setupDecimals(uint8 decimals_) internal {
+    _decimals = decimals_;
+  }
+
+  function _beforeTokenTransfer(address from, address to, uint256 amount) internal { }
+
+  /////////////////////////////
+  ///   Vault functions     ///
+  /////////////////////////////
+  
   function setTreasury(ITreasury _treasury) external governanceOnly {
     require(address(_treasury) != address(0), "treasury address can't be zero");
     treasury = _treasury;
