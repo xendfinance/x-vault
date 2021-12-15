@@ -32,6 +32,8 @@ contract StrategyUgoHawkVenusBUSDFarm is BaseStrategy, ERC3156FlashBorrowerInter
 
   bool public forceMigrate = false;
 
+  bool private adjusted;        // flag whether position adjusting was done in prepareReturn
+
   VBep20I public vToken;
   uint256 secondsPerBlock;     // approx seconds per block
   uint256 public blocksToLiquidationDangerZone; // 7 days =  60*60*24*7/secondsPerBlock
@@ -68,6 +70,9 @@ contract StrategyUgoHawkVenusBUSDFarm is BaseStrategy, ERC3156FlashBorrowerInter
     blocksToLiquidationDangerZone = 60 * 60 * 24 * 7 / _secondsPerBlock;
     maxReportDelay = 3600 * 24;
     profitFactor = 100;
+    minXvsToSell = 100000000;
+
+    adjusted = false;
   }
 
   function name() external override view returns (string memory) {
@@ -340,8 +345,13 @@ contract StrategyUgoHawkVenusBUSDFarm is BaseStrategy, ERC3156FlashBorrowerInter
     if (balance > debt) {
       _profit = balance - debt;
       if (wantBalance < _profit) {
-        // all reserve is profit in case `profit` is greater than `wantBalance`
-        _profit = wantBalance;
+        liquidatePosition(_profit);
+        adjusted = true;
+        uint256 _wantBalance = want.balanceOf(address(this));
+        if (_wantBalance < _profit) {
+          // all reserve is profit in case `profit` is greater than `_wantBalance`
+          _profit = _wantBalance;
+        }
       } else if (wantBalance > _profit.add(_debtOutstanding)) {
         _debtPayment = _debtOutstanding;
       } else {
@@ -362,6 +372,11 @@ contract StrategyUgoHawkVenusBUSDFarm is BaseStrategy, ERC3156FlashBorrowerInter
    * @param _debtOutstanding the amount to withdraw from strategy to vault
    */
   function adjustPosition(uint256 _debtOutstanding) internal override {
+    if (adjusted) {
+      adjusted = false;
+      return;
+    }
+
     if (emergencyExit) {
       return;
     }
