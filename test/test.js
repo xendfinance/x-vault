@@ -6,6 +6,7 @@ const XVault = artifacts.require('XVault');
 const Strategy = artifacts.require('StrategyUgoHawkVenusUSDTFarm');
 const NewStrategy = artifacts.require('StrategyUgoHawkVenusUSDCFarm');
 const VaultProxy = artifacts.require('VaultProxy');
+const StrategyProxy = artifacts.require('StrategyProxy');
 const VaultProxyAdmin = artifacts.require('VaultProxyAdmin');
 const USDT = require('./abi/USDT.json');
 const ERC20 = require('./abi/ERC20.json');
@@ -109,9 +110,19 @@ contract('xVault', async([dev, minter, admin, alice, bob]) => {
     const vaultName = await this.vaultProxyInstance.symbol();
     console.log('vaultName:', vaultName);
 
-    this.strategy = await Strategy.new(this.vaultProxyInstance.address, this.vUSDTAddress, '3', {
+    this.strategy = await Strategy.new({
       from: minter
     });
+
+    this.strategyProxy = await StrategyProxy.new(this.strategy.address, this.proxyAdmin.address, "0x", {
+      from: minter
+    })
+
+    this.strategyProxyInstance = await Strategy.at(this.strategyProxy.address)
+
+    await this.strategyProxyInstance.initialize(this.vaultProxyInstance.address, this.vUSDTAddress, '3', {
+      from: minter
+    })
     
     const usdtHolder = '0xefdca55e4bce6c1d535cb2d0687b5567eef2ae83';
     await this.usdtContract.methods.transfer(alice, "100000000000000000000000").send({
@@ -350,7 +361,7 @@ contract('xVault', async([dev, minter, admin, alice, bob]) => {
     const balanceBefore = await this.usdtContract.methods.balanceOf(alice).call();
     console.log('balanceBefore:', balanceBefore);
 
-    await this.vaultProxyInstance.addStrategy(this.strategy.address, '10000', '50000000000000000', '0', {
+    await this.vaultProxyInstance.addStrategy(this.strategyProxyInstance.address, '10000', '50000000000000000', '0', {
       from: dev
     });
 
@@ -377,22 +388,22 @@ contract('xVault', async([dev, minter, admin, alice, bob]) => {
 
     await time.increase(time.duration.days(5));
 
-    // await this.strategy.setFlashLoan(false, {
+    // await this.strategyProxyInstance.setFlashLoan(false, {
     //   from: minter
     // })
     
-    // await this.strategy.setCollateralTarget(0, {
+    // await this.strategyProxyInstance.setCollateralTarget(0, {
     //   from: minter
     // })
-    await this.strategy.setCollateralTarget(web3.utils.toWei('0.01'), {
+    await this.strategyProxyInstance.setCollateralTarget(web3.utils.toWei('0.01'), {
       from: minter
     })
 
-    await this.strategy.harvest({
+    await this.strategyProxyInstance.harvest({
       from: minter
     });
 
-    await this.strategy.setFlashLoan(false, {
+    await this.strategyProxyInstance.setFlashLoan(false, {
       from: minter
     })
 
@@ -402,7 +413,7 @@ contract('xVault', async([dev, minter, admin, alice, bob]) => {
 
     await time.increase(time.duration.days(5));
 
-    await this.strategy.harvest({
+    await this.strategyProxyInstance.harvest({
       from: minter
     });
 
@@ -411,12 +422,12 @@ contract('xVault', async([dev, minter, admin, alice, bob]) => {
     })
 
     this.vToken = new web3.eth.Contract(ERC20, this.vUSDTAddress);
-    const vTokenBalance = await this.vToken.methods.balanceOf(this.strategy.address).call();
+    const vTokenBalance = await this.vToken.methods.balanceOf(this.strategyProxyInstance.address).call();
     
 
     console.log('vTokenBalance:', vTokenBalance)
 
-    const usdtBalance = await this.usdtContract.methods.balanceOf(this.strategy.address).call();
+    const usdtBalance = await this.usdtContract.methods.balanceOf(this.strategyProxyInstance.address).call();
     console.log('usdtBalaanc:', usdtBalance)
 
   });

@@ -4,6 +4,7 @@ pragma solidity 0.6.12;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
+import "@openzeppelin/contracts/proxy/Initializable.sol";
 import "../interfaces/VaultAPI.sol";
 
 /**
@@ -19,7 +20,7 @@ import "../interfaces/VaultAPI.sol";
  *  accurate picture of the Strategy's performance. See  `vault.report()`,
  *  `harvest()`, and `harvestTrigger()` for further details.
  */
-abstract contract BaseStrategy {
+abstract contract BaseStrategy is Initializable {
   using SafeMath for uint256;
   using SafeERC20 for IERC20;
   
@@ -33,25 +34,25 @@ abstract contract BaseStrategy {
     return 0;
   }
 
-  VaultAPI public immutable vault;
+  VaultAPI public vault;
   
   address public strategist;
   address public rewards;
   address public keeper;
 
 
-  IERC20 public immutable want;
+  IERC20 public want;
 
   // The maximum number of seconds between harvest calls.
-  uint256 public maxReportDelay = 86400;    // once a day
+  uint256 public maxReportDelay;    // maximum report delay
 
   // The minimum multiple that `callCost` must be above the credit/profit to
   // be "justifiable". See `setProfitFactor()` for more details.
-  uint256 public profitFactor = 100;
+  uint256 public profitFactor;
 
   // Use this to adjust the threshold at which running a debt causes a
   // harvest trigger. See `setDebtThreshold()` for more details.
-  uint256 public debtThreshold = 0;
+  uint256 public debtThreshold;
 
   bool public emergencyExit;
 
@@ -93,14 +94,26 @@ abstract contract BaseStrategy {
     _;
   }
 
-  constructor(address _vault) public {
+  constructor() public { }
+
+  function initialize(
+    address _vault
+  ) public initializer {
+    
     vault = VaultAPI(_vault);
     want = IERC20(VaultAPI(_vault).token());
+    
     IERC20(VaultAPI(_vault).token()).safeApprove(_vault, uint256(-1));
+    
     strategist = msg.sender;
     rewards = msg.sender;
     keeper = msg.sender;
+    
     setProtectedTokens();
+    
+    profitFactor = 100;
+    debtThreshold = 0;
+    maxReportDelay = 86400;
   }
 
   function setStrategist(address _strategist) external onlyAuthorized {
