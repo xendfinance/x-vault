@@ -160,8 +160,8 @@ contract XVault is IERC20, Context, ReentrancyGuard, Initializable {
     management = _governance;
     treasury = _treasury;
 
-    performanceFee = 1000;        // 10% of yield
-    managementFee = 200;          // 2% per year
+    performanceFee = 500;        // 5% of yield
+    managementFee = 50;          // 0.5% per year
     lastReport = block.timestamp;
     activation = block.timestamp;
 
