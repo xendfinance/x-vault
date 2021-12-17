@@ -166,6 +166,7 @@ contract XVault is IERC20, Context, ReentrancyGuard, Initializable {
     activation = block.timestamp;
 
     lastValuePerShare = 1000000000;
+    depositLimit = 1_000_000 * 1 ether;
     
   }
 
