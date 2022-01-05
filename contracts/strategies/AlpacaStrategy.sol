@@ -14,10 +14,10 @@ contract StrategyAlpacaAutofarm is BaseStrategy {
 
   IAlpacaVault public ibToken;
   address public constant alpacaToken = address(0x8F0528cE5eF7B51152A59745bEfDD91D97091d2F);
-  IAlpacaFarm public alpacaFarm = IAlpacaFarm(0xA625AB01B08ce023B2a342Dbb12a16f2C8489A8F);
-  uint256 immutable private poolId;  // the ibToken pool id of alpaca farm contract
+  IAlpacaFarm public constant alpacaFarm = IAlpacaFarm(0xA625AB01B08ce023B2a342Dbb12a16f2C8489A8F);
+  uint256 private poolId;             // the ibToken pool id of alpaca farm contract
   address public constant wbnb = address(0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c);
-  address[] public path;
+  address[] public path;              // disposal path for alpaca token on uniswap
 
   address public constant uniswapRouter = address(0x10ED43C718714eb63d5aA57B78B54704E256024E);
 
@@ -29,10 +29,20 @@ contract StrategyAlpacaAutofarm is BaseStrategy {
     _;
   }
 
-  constructor(address _vault, address _ibToken, uint256 _poolId, address[] memory _path) public BaseStrategy(_vault) {
+  constructor() public {}
+
+  function initialize(
+    address _vault, 
+    address _ibToken, 
+    uint256 _poolId, 
+    address[] memory _path
+  ) public initializer {
+    
+    super.initialize(_vault);
+
     ibToken = IAlpacaVault(_ibToken);
     poolId = _poolId;
-    maxReportDelay = 3600 * 24;
+    maxReportDelay = 24 * 3600;           // a day
     path = _path;
   }
 
@@ -123,7 +133,7 @@ contract StrategyAlpacaAutofarm is BaseStrategy {
     uint256 profit = 0;
     if (total > params.totalDebt) profit = total.sub(params.totalDebt);
 
-    uint256 credit = vault.creditAvailable().add(profit);
+    uint256 credit = vault.creditAvailable(address(this)).add(profit);
     return (wantGasCost.mul(profitFactor) < credit);
   }
 
