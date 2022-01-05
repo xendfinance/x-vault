@@ -2,18 +2,16 @@
 pragma solidity 0.6.12;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
-
-// interface GuestList {
-//   function authorized(address guest, uint256 amount) public returns (bool);
-// }
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Context.sol";
+import "@openzeppelin/contracts/proxy/Initializable.sol";
 
 interface Strategy {
   function want() external view returns (address);
   function vault() external view returns (address);
-  function estimateTotalAssets() external view returns (uint256);
+  function estimatedTotalAssets() external view returns (uint256);
   function withdraw(uint256 _amount) external returns (uint256, uint256);
   function migrate(address _newStrategy) external;
 }
@@ -23,31 +21,42 @@ interface ITreasury {
 }
 
 
-contract XVault is ERC20 {
-  using SafeERC20 for ERC20;
+contract XVault is IERC20, Context, ReentrancyGuard, Initializable {
+  using SafeERC20 for IERC20;
   using Address for address;
   using SafeMath for uint256;
   
+  // ERC20 standard variables
+  mapping (address => uint256) private _balances;
+
+  mapping (address => mapping (address => uint256)) private _allowances;
+
+  uint256 private _totalSupply;
+
+  string private _name;
+  string private _symbol;
+  uint8 private _decimals;
+  
+  // Vault variables
   address public guardian;
   address public governance;
   address public management;
-  ERC20 public immutable token;
+  IERC20 public token;
 
-  // GuestList guestList;
 
   struct StrategyParams {
     uint256 performanceFee;     // strategist's fee
     uint256 activation;         // block.timstamp of activation of strategy
     uint256 debtRatio;          // percentage of maximum token amount of total assets that strategy can borrow from the vault
     uint256 rateLimit;          // limit rate per unit time, it controls the amount of token strategy can borrow last harvest
-    uint256 lastReport;
+    uint256 lastReport;         // block.timestamp of the last time a report occured
     uint256 totalDebt;          // total outstanding debt that strategy has
-    uint256 totalGain;
-    uint256 totalLoss;
+    uint256 totalGain;          // Total returns that Strategy has realized for Vault
+    uint256 totalLoss;          // Total losses that Strategy has realized for Vault
   }
 
-  uint256 public MAX_BPS = 100;
-  uint256 public SECS_PER_YEAR = 60 * 60 * 24 * 36525 / 100;
+  uint256 public constant MAX_BPS = 10000;
+  uint256 public constant SECS_PER_YEAR = 60 * 60 * 24 * 36525 / 100;
 
   mapping (address => StrategyParams) public strategies;
   uint256 constant MAXIMUM_STRATEGIES = 20;
@@ -61,22 +70,25 @@ contract XVault is ERC20 {
   uint256 public debtRatio;
   uint256 public totalDebt;   // Amount of tokens that all strategies have borrowed
   uint256 public lastReport;  // block.timestamp of last report
-  uint256 public immutable activation;  // block.timestamp of contract deployment
-  uint256 private lastValuePerShare = 1000000000;
+  uint256 public activation;  // block.timestamp of contract initialize
+  uint256 private lastValuePerShare;
 
   ITreasury public treasury;    // reward contract where governance fees are sent to
   uint256 public managementFee;
   uint256 public performanceFee;
 
+  event Deposit(address indexed user, uint256 amount);
+  event Withdraw(address indexed user, uint256 amount);
   event UpdateTreasury(ITreasury treasury);
   event UpdateGuardian(address guardian);
   event UpdateManagement(address management);
-  event UpdateGuestList(address guestList);
   event UpdateDepositLimit(uint256 depositLimit);
   event UpdatePerformanceFee(uint256 fee);
   event StrategyRemovedFromQueue(address strategy);
   event UpdateManangementFee(uint256 fee);
   event EmergencyShutdown(bool active);
+  event UpdateWithdrawalQueue(address[] queue);
+  event StrategyAddedToQueue(address strategy);
   event StrategyReported(
     address indexed strategy,
     uint256 gain,
@@ -93,93 +105,254 @@ contract XVault is ERC20 {
     uint256 rateLimit,
     uint256 performanceFee
   );
+  event StrategyUpdateDebtRatio(
+    address indexed strategy, 
+    uint256 debtRatio
+  );
+  event StrategyUpdateRateLimit(
+    address indexed strategy,
+    uint256 rateLimit
+  );
+  event StrategyUpdatePerformanceFee(
+    address indexed strategy,
+    uint256 performanceFee
+  );
   event StrategyRevoked(
     address indexed strategy
   );
+  event StrategyMigrated(
+    address oldStrategy,
+    address newStrategy
+  );
 
-  constructor(
+  modifier governanceOnly() {
+    require(msg.sender == governance, "!governance");
+    _;
+  }
+
+  modifier guardianOnly() {
+    require(msg.sender == governance || msg.sender == guardian, "caller must be governance or guardian");
+    _;
+  }
+
+  modifier managementOnly {
+    require(msg.sender == governance || msg.sender == management, "caller must be governance or management");
+    _;
+  }
+
+  constructor() public { }
+
+  function initialize(
     address _token,
     address _governance,
     ITreasury _treasury
-  ) 
-  public ERC20(
-    string(abi.encodePacked("xend ", ERC20(_token).name())),
-    string(abi.encodePacked("xv", ERC20(_token).symbol()))
-  ){
+  ) public initializer {
 
-    token = ERC20(_token);
+    _name = string(abi.encodePacked("Xend ", ERC20(_token).name()));
+    _symbol = string(abi.encodePacked("xv", ERC20(_token).symbol()));
+    _decimals = ERC20(_token).decimals();
+    
+    require(_governance != address(0), "governance address can't be zero");
+    require(address(_treasury) != address(0), "treasury address can't be zero");
+    token = IERC20(_token);
     guardian = msg.sender;
     governance = _governance;
     management = _governance;
     treasury = _treasury;
 
-    performanceFee = 1000;        // 10% of yield
-    managementFee = 200;          // 2% per year
+    performanceFee = 500;        // 5% of yield
+    managementFee = 50;          // 0.5% per year
     lastReport = block.timestamp;
     activation = block.timestamp;
 
-    _setupDecimals(ERC20(_token).decimals());
+    lastValuePerShare = 1000000000;
+    depositLimit = 1_000_000 * 1 ether;
+    
   }
 
-  // function setName(string memory _name) external {
-  //   require(msg.sender == governance, "!governance");
-  //   name = _name;
-  // }
+  /////////////////////////////////
+  /// ERC20 standard functions  ///
+  /////////////////////////////////
 
-  // function setSymbol(string memory _symbol) external {
-  //   require(msg.sender == governance, "!governance");
-  //   symbol = _symbol;
-  // }
+  /**
+   * @dev Returns the name of the token.
+   */
+  function name() public view returns (string memory) {
+    return _name;
+  }
 
-  function setTreasury(ITreasury _treasury) external {
-    require(msg.sender == governance, "!governance");
+  /**
+   * @dev Returns the symbol of the token, usually a shorter version of the
+   * name.
+   */
+  function symbol() public view returns (string memory) {
+    return _symbol;
+  }
+
+  function decimals() public view returns (uint8) {
+    return _decimals;
+  }
+
+  /**
+   * @dev See {IERC20-totalSupply}.
+   */
+  function totalSupply() public view override returns (uint256) {
+    return _totalSupply;
+  }
+
+  /**
+   * @dev See {IERC20-balanceOf}.
+   */
+  function balanceOf(address account) public view override returns (uint256) {
+    return _balances[account];
+  }
+
+  /**
+   * @dev See {IERC20-transfer}.
+   *
+   * Requirements:
+   *
+   * - `recipient` cannot be the zero address.
+   * - the caller must have a balance of at least `amount`.
+   */
+  function transfer(address recipient, uint256 amount) public override returns (bool) {
+    _transfer(_msgSender(), recipient, amount);
+    return true;
+  }
+
+  /**
+   * @dev See {IERC20-allowance}.
+   */
+  function allowance(address owner, address spender) public view override returns (uint256) {
+    return _allowances[owner][spender];
+  }
+
+  /**
+   * @dev See {IERC20-approve}.
+   *
+   * Requirements:
+   *
+   * - `spender` cannot be the zero address.
+   */
+  function approve(address spender, uint256 amount) public override returns (bool) {
+    _approve(_msgSender(), spender, amount);
+    return true;
+  }
+
+  /**
+   * @dev See {IERC20-transferFrom}.
+   *
+   * Emits an {Approval} event indicating the updated allowance. This is not
+   * required by the EIP. See the note at the beginning of {ERC20}.
+   *
+   * Requirements:
+   *
+   * - `sender` and `recipient` cannot be the zero address.
+   * - `sender` must have a balance of at least `amount`.
+   * - the caller must have allowance for ``sender``'s tokens of at least
+   * `amount`.
+   */
+  function transferFrom(address sender, address recipient, uint256 amount) public override returns (bool) {
+    _transfer(sender, recipient, amount);
+    _approve(sender, _msgSender(), _allowances[sender][_msgSender()].sub(amount, "ERC20: transfer amount exceeds allowance"));
+    return true;
+  }
+
+  function increaseAllowance(address spender, uint256 addedValue) public returns (bool) {
+    _approve(_msgSender(), spender, _allowances[_msgSender()][spender].add(addedValue));
+    return true;
+  }
+
+  function decreaseAllowance(address spender, uint256 subtractedValue) public returns (bool) {
+    _approve(_msgSender(), spender, _allowances[_msgSender()][spender].sub(subtractedValue, "ERC20: decreased allowance below zero"));
+    return true;
+  }
+
+  function _transfer(address sender, address recipient, uint256 amount) internal {
+    require(sender != address(0), "ERC20: transfer from the zero address");
+    require(recipient != address(0), "ERC20: transfer to the zero address");
+
+    _beforeTokenTransfer(sender, recipient, amount);
+
+    _balances[sender] = _balances[sender].sub(amount, "ERC20: transfer amount exceeds balance");
+    _balances[recipient] = _balances[recipient].add(amount);
+    emit Transfer(sender, recipient, amount);
+  }
+
+  function _mint(address account, uint256 amount) internal {
+    require(account != address(0), "ERC20: mint to the zero address");
+
+    _beforeTokenTransfer(address(0), account, amount);
+
+    _totalSupply = _totalSupply.add(amount);
+    _balances[account] = _balances[account].add(amount);
+    emit Transfer(address(0), account, amount);
+  }
+
+  function _burn(address account, uint256 amount) internal {
+    require(account != address(0), "ERC20: burn from the zero address");
+
+    _beforeTokenTransfer(account, address(0), amount);
+
+    _balances[account] = _balances[account].sub(amount, "ERC20: burn amount exceeds balance");
+    _totalSupply = _totalSupply.sub(amount);
+    emit Transfer(account, address(0), amount);
+  }
+
+  function _approve(address owner, address spender, uint256 amount) internal {
+    require(owner != address(0), "ERC20: approve from the zero address");
+    require(spender != address(0), "ERC20: approve to the zero address");
+
+    _allowances[owner][spender] = amount;
+    emit Approval(owner, spender, amount);
+  }
+
+  function _setupDecimals(uint8 decimals_) internal {
+    _decimals = decimals_;
+  }
+
+  function _beforeTokenTransfer(address from, address to, uint256 amount) internal { }
+
+  /////////////////////////////
+  ///   Vault functions     ///
+  /////////////////////////////
+  
+  function setTreasury(ITreasury _treasury) external governanceOnly {
+    require(address(_treasury) != address(0), "treasury address can't be zero");
     treasury = _treasury;
     emit UpdateTreasury(_treasury);
   }
 
-  function setGuardian(address _guardian) external {
-    require(msg.sender == governance || msg.sender == guardian, "caller must be governance or guardian");
+  function setGuardian(address _guardian) external guardianOnly {
+    require(_guardian != address(0), "guardian address can't be zero");
     guardian = _guardian;
     emit UpdateGuardian(_guardian);
   }
 
-  function balance() public view returns (uint256) {
-    return token.balanceOf(address(this));
-  }
-
-  function setGovernance(address _governance) external {
-    require(msg.sender == governance, "!governance");
+  function setGovernance(address _governance) external governanceOnly {
+    require(_governance != address(0), "guardian address can't be zero");
     governance = _governance;
   }
 
-  function setManagement(address _management) external {
-    require(msg.sender == governance, "!governance");
+  function setManagement(address _management) external governanceOnly {
+    require(_management != address(0), "guardian address can't be zero");
     management = _management;
     emit UpdateManagement(_management);
   }
 
-  // function setGuestList(address _guestList) external {
-  //   require(msg.sender == governance, "!governance");
-  //   guestList = GuestList(_guestList);
-  //   emit UpdateGuestList(guestList);
-  // }
-
-  function setDepositLimit(uint256 limit) external {
-    require(msg.sender == governance, "!governance");
+  function setDepositLimit(uint256 limit) external governanceOnly {
     depositLimit = limit;
     emit UpdateDepositLimit(depositLimit);
   }
   
 
-  function setPerformanceFee(uint256 fee) external {
-    require(msg.sender == governance, "!governance");
-    require(fee < MAX_BPS, "performance fee should be smaller than ...");
+  function setPerformanceFee(uint256 fee) external governanceOnly {
+    require(fee <= MAX_BPS - performanceFee, "performance fee should be smaller than ...");
     performanceFee = fee;
     emit UpdatePerformanceFee(fee);
   }
 
-  function setManagementFee(uint256 fee) external {
-    require(msg.sender == governance, "!governance");
+  function setManagementFee(uint256 fee) external governanceOnly {
     require(fee < MAX_BPS, "management fee should be smaller than ...");
     managementFee = fee;
     emit UpdateManangementFee(fee);
@@ -200,6 +373,21 @@ contract XVault is ERC20 {
 
     emergencyShutdown = active;
     emit EmergencyShutdown(active);
+  }
+
+  /**
+   *  @notice
+   *    Update the withdrawalQueue.
+   *    This may only be called by governance or management.
+   *  @param queue The array of addresses to use as the new withdrawal queue. This is order sensitive.
+   */
+  function setWithdrawalQueue(address[] memory queue) external managementOnly {
+    require(queue.length < MAXIMUM_STRATEGIES, "withdrawal queue is over allowed maximum");
+    for (uint i = 0; i < queue.length; i++) {
+      require(strategies[queue[i]].activation > 0, "all the strategies should be active");
+    }
+    withdrawalQueue = queue;
+    emit UpdateWithdrawalQueue(queue);
   }
 
   function getApy() external view returns (uint256) {
@@ -227,11 +415,13 @@ contract XVault is ERC20 {
    * Deposit `_amount` issuing shares to `msg.sender`.
    * If the vault is in emergency shutdown, deposits will not be accepted and this call will fail.
    */
-  function deposit(uint256 _amount) public returns (uint256) {
+  function deposit(uint256 _amount) public nonReentrant returns (uint256) {
     require(emergencyShutdown != true, "in status of Emergency Shutdown");
     uint256 amount = _amount;
-    if (amount == 0) {
+    if (amount == uint256(-1)) {
       amount = _min(depositLimit.sub(_totalAssets()), token.balanceOf(msg.sender));
+    } else {
+      require(_totalAssets().add(amount) <= depositLimit, "exceeds deposit limit");
     }
     
     require(amount > 0, "deposit amount should be bigger than zero");
@@ -240,6 +430,7 @@ contract XVault is ERC20 {
 
     token.safeTransferFrom(msg.sender, address(this), amount);
     tokenBalance = tokenBalance.add(amount);
+    emit Deposit(msg.sender, amount);
 
     return shares;
   }
@@ -254,6 +445,10 @@ contract XVault is ERC20 {
 
   function totalAssets() external view returns (uint256) {
     return _totalAssets();
+  }
+
+  function balance() public view returns (uint256) {
+    return token.balanceOf(address(this));
   }
 
   function _shareValue(uint256 _share) internal view returns (uint256) {
@@ -271,6 +466,25 @@ contract XVault is ERC20 {
   }
 
   /**
+   * @notice
+   *    Determines the total quantity of shares this Vault can provide,
+   *    factoring in assets currently residing in the Vault, as well as those deployed to strategies.
+   * @dev
+   *    If you want to calculate the maximum a user could withdraw up to, need to use this function
+   * @return The total quantity of shares this Vault can provide
+   */
+  function maxAvailableShares() external view returns (uint256) {
+    uint256 _shares = _sharesForAmount(token.balanceOf(address(this)));
+
+    for (uint i = 0; i < withdrawalQueue.length; i++) {
+      if (withdrawalQueue[i] == address(0)) break;
+      _shares = _shares.add(_sharesForAmount(strategies[withdrawalQueue[i]].totalDebt));
+    }
+
+    return _shares;
+  }
+
+  /**
    * Withdraw the `msg.sender`'s tokens from the vault, redeeming amount `_shares`
    * for an appropriate number of tokens.
    * @param maxShare How many shares to try and redeem for tokens, defaults to all.
@@ -282,7 +496,8 @@ contract XVault is ERC20 {
     uint256 maxShare,
     address recipient,
     uint256 maxLoss     // if 1, 0.01%
-  ) public returns (uint256) {
+  ) public nonReentrant returns (uint256) {
+    tokenBalance = token.balanceOf(address(this));
     uint256 shares = maxShare;
     if (maxShare == 0) {
       shares = balanceOf(msg.sender);
@@ -294,9 +509,8 @@ contract XVault is ERC20 {
     require(shares <= balanceOf(msg.sender), "share should be smaller than their own");
     
     uint256 value = _shareValue(shares);
+    uint256 totalLoss = 0;
     if (value > token.balanceOf(address(this))) {
-      
-      uint256 totalLoss = 0;
       
       for(uint i = 0; i < withdrawalQueue.length; i++) {
         address strategy = withdrawalQueue[i];
@@ -324,7 +538,6 @@ contract XVault is ERC20 {
         totalDebt = totalDebt.sub(withdrawn.add(loss));
       }
 
-      require(totalLoss < maxLoss.mul(value.add(totalLoss)).div(MAX_BPS), "revert if totalLoss is more than permitted");
     }
 
     if (value > token.balanceOf(address(this))) {
@@ -334,8 +547,10 @@ contract XVault is ERC20 {
     
     _burn(msg.sender, shares);
     
+    require(totalLoss <= maxLoss.mul(value.add(totalLoss)).div(MAX_BPS), "revert if totalLoss is more than permitted");
     token.safeTransfer(recipient, value);
     tokenBalance = tokenBalance.sub(value);
+    emit Withdraw(recipient, value);
     
     return value;
   }
@@ -349,10 +564,14 @@ contract XVault is ERC20 {
    * @param _rateLimit Limit on the increase of debt per unit time since last harvest
    * @param _performanceFee The fee the strategist will receive based on this Vault's performance.
    */
-  function addStrategy(address _strategy, uint256 _debtRatio, uint256 _rateLimit, uint256 _performanceFee) public {
+  function addStrategy(address _strategy, uint256 _debtRatio, uint256 _rateLimit, uint256 _performanceFee) public governanceOnly {
     require(_strategy != address(0), "strategy address can't be zero");
-    require(msg.sender == governance, "caller must be governance");
+    require(!emergencyShutdown, "in status of Emergency Shutdown");
     require(_performanceFee <= MAX_BPS - performanceFee, "performance fee should be smaller than ...");
+    require(debtRatio.add(_debtRatio) <= MAX_BPS, "total debt ratio should be smaller than MAX_BPS");
+    require(strategies[_strategy].activation == 0, "already activated");
+    require(Strategy(_strategy).vault() == address(this), "is not one for this vault");
+    require(Strategy(_strategy).want() == address(token), "incorrect want token for this vault");
 
     strategies[_strategy] = StrategyParams({
       performanceFee: _performanceFee,
@@ -375,12 +594,72 @@ contract XVault is ERC20 {
 
   /**
    * @notice
+   *    Change the quantity of assets `strategy` may manage.
+   *    This may be called by governance or management
+   * @param _strategy The strategy to update
+   * @param _debtRatio The quantity of assets `strategy` may now manage
+   */
+  function updateStrategyDebtRatio(address _strategy, uint256 _debtRatio) external managementOnly {
+    require(strategies[_strategy].activation > 0, "the strategy not activated");
+    debtRatio = debtRatio.sub(strategies[_strategy].debtRatio);
+    strategies[_strategy].debtRatio = _debtRatio;
+    debtRatio = debtRatio.add(_debtRatio);
+    require(debtRatio <= MAX_BPS, "debtRatio should be smaller than MAX_BPS");
+    emit StrategyUpdateDebtRatio(_strategy, _debtRatio);
+  }
+
+  /**
+   * @notice
+   *    Change the quantity of assets per block this Vault may deposit to or withdraw from `strategy`.
+   *    This may only be called by governance or management.
+   * @param _strategy The strategy to update
+   * @param _rateLimit Limit on the increase of debt per unit time since the last harvest
+   */
+  function updateStrategyRateLimit(address _strategy, uint256 _rateLimit) external managementOnly {
+    require(strategies[_strategy].activation > 0, "the strategy not activated");
+    strategies[_strategy].rateLimit = _rateLimit;
+    emit StrategyUpdateRateLimit(_strategy, _rateLimit);
+  }
+
+  /**
+   * @notice 
+   *    Change the fee the strategist will receive based on this Vault's performance
+   *    This may only be called by goverance.
+   * @param _strategy The strategy to update
+   * @param _performanceFee The new fee the strategist will receive
+   */
+  function updateStrategyPerformanceFee(address _strategy, uint256 _performanceFee) external governanceOnly {
+    require(performanceFee <= MAX_BPS - performanceFee, "fee should be smaller than MAX_BPS reduced by vault performance fee");
+    require(strategies[_strategy].activation > 0, "the strategy not activated");
+    strategies[_strategy].performanceFee = _performanceFee;
+    emit StrategyUpdatePerformanceFee(_strategy, _performanceFee);
+  }
+
+  /**
+   *  @notice
+   *    Add `strategy` to `withdrawalQueue`.
+   *    This may only be called by governance or management.
+   *  @dev
+   *    The Strategy will be appended to `withdrawalQueue`, call `setWithdrawalQueue` to change the order.
+   *  @param _strategy The Strategy to add.
+   */
+  function addStrategyToQueue(address _strategy) external managementOnly {
+    require(strategies[_strategy].activation > 0, "the strategy not activated");
+    require(withdrawalQueue.length < MAXIMUM_STRATEGIES, "withdrawal queue is over allowed maximum");
+    for (uint i = 0; i < withdrawalQueue.length; i++) {
+      require(withdrawalQueue[i] != _strategy, "the strategy already added to the withdrawal queue");
+    }
+    withdrawalQueue.push(_strategy);
+    emit StrategyAddedToQueue(_strategy);
+  }
+
+  /**
+   * @notice
    *    Remove `strategy` from `withdrawalQueue`
    *    This may only be called by governance or management.
    * @param _strategy The Strategy to remove
    */
-  function removeStrategyFromQueue(address _strategy) external {
-    require(msg.sender == management || msg.sender == governance);
+  function removeStrategyFromQueue(address _strategy) external managementOnly {
     
     for (uint i = 0; i < withdrawalQueue.length; i++) {
       
@@ -405,10 +684,50 @@ contract XVault is ERC20 {
   }
 
   function _revokeStrategy(address _strategy) internal {
-    assert(strategies[_strategy].debtRatio > 0);
+    require(strategies[_strategy].debtRatio > 0, "the strategy already revoked");
     debtRatio = debtRatio.sub(strategies[_strategy].debtRatio);
     strategies[_strategy].debtRatio = 0;
+    tokenBalance = token.balanceOf(address(this));
     emit StrategyRevoked(_strategy);
+  }
+
+  /**
+   *  @notice
+   *    Migrate a Strategy, including all assets from `oldVersion` to `newVersion`.
+   *    This may only be called by governance.
+   *  @param oldVersion The existing Strategy to migrate from.
+   *  @param newVersion The new Strategy to migrate to.
+   */
+  function migrateStrategy(address oldVersion, address newVersion) external governanceOnly {
+    require(newVersion != address(0), "new strategy can't be a zero");
+    require(strategies[oldVersion].activation > 0, "the old strategy should've been active");
+    require(strategies[newVersion].activation == 0, "the new strategy already activated before");
+
+    StrategyParams memory strategy = strategies[oldVersion];
+    _revokeStrategy(oldVersion);
+    debtRatio = debtRatio.add(strategy.debtRatio);
+    strategies[oldVersion].totalDebt = 0;
+
+    strategies[newVersion] = StrategyParams({
+      performanceFee: strategy.performanceFee,
+      activation: block.timestamp,
+      debtRatio: strategy.debtRatio,
+      rateLimit: strategy.rateLimit,
+      lastReport: block.timestamp,
+      totalDebt: strategy.totalDebt,
+      totalGain: 0,
+      totalLoss: 0
+    });
+
+    Strategy(oldVersion).migrate(newVersion);
+    emit StrategyMigrated(oldVersion, newVersion);
+
+    for (uint i = 0; i < withdrawalQueue.length; i++) {
+      if (withdrawalQueue[i] == oldVersion) {
+        withdrawalQueue[i] = newVersion;
+        return;
+      }
+    }
   }
 
   /**
@@ -419,13 +738,21 @@ contract XVault is ERC20 {
    *    The anticipated amount `strategy` should make on its investment since its last report.
    */
   function expectedReturn(address _strategy) external view returns (uint256) {
-    _expectedReturn(_strategy);
+    return _expectedReturn(_strategy);
   }
 
   function _expectedReturn(address _strategy) internal view returns (uint256) {
     uint256 delta = block.timestamp - strategies[_strategy].lastReport;
     if (delta > 0) {
       return strategies[_strategy].totalGain.mul(delta).div(block.timestamp - strategies[_strategy].activation);
+    } else {
+      return 0;
+    }
+  }
+
+  function availableDepositLimit() external view returns (uint256) {
+    if (depositLimit > _totalAssets()) {
+      return depositLimit.sub(_totalAssets());
     } else {
       return 0;
     }
@@ -438,9 +765,9 @@ contract XVault is ERC20 {
   function pricePerShare() external view returns (uint256) {
     if (totalSupply() == 0) {
       // return 10 ** decimals();      // price of 1:1
-      return _totalAssets() > 10 ** decimals() ? _totalAssets() : 10 ** decimals();
+      return _totalAssets() > (uint256(10) ** decimals()) ? _totalAssets() : uint256(10) ** decimals();
     } else {
-      return _shareValue(10 ** decimals());
+      return _shareValue(uint256(10) ** decimals());
     }
   }
 
@@ -505,8 +832,11 @@ contract XVault is ERC20 {
     strategies[_strategy].totalLoss = strategies[_strategy].totalLoss.add(loss);
     strategies[_strategy].totalDebt = _totalDebt.sub(loss);
 
+    // reduce debtRatio if loss happens
     uint256 _debtRatio = strategies[_strategy].debtRatio;
-    strategies[_strategy].debtRatio = _debtRatio.sub(_min(loss.mul(MAX_BPS).div(_totalAssets()), _debtRatio));     // reduce debtRatio if loss happens
+    uint256 ratioChange = _min(loss.mul(debtRatio).div(_totalAssets()), _debtRatio);
+    strategies[_strategy].debtRatio = _debtRatio.sub(ratioChange);
+    debtRatio = debtRatio.sub(ratioChange);
 
     totalDebt = totalDebt.sub(loss);
   }
@@ -597,10 +927,10 @@ contract XVault is ERC20 {
 
     uint256 totalAvailable = gain.add(debtPayment);
     if (totalAvailable < credit) {
-      token.transfer(msg.sender, credit.sub(totalAvailable));
+      token.safeTransfer(msg.sender, credit.sub(totalAvailable));
       tokenBalance = tokenBalance.sub(credit.sub(totalAvailable));
     } else if (totalAvailable > credit) {
-      token.transferFrom(msg.sender, address(this), totalAvailable.sub(credit));
+      token.safeTransferFrom(msg.sender, address(this), totalAvailable.sub(credit));
       tokenBalance = tokenBalance.add(totalAvailable.sub(credit));
     }
     // else (if totalAvailable == credit), it is already balanced so do nothing.
@@ -638,7 +968,7 @@ contract XVault is ERC20 {
       // this block is used for getting penny
       // if Strategy is rovoked or exited for emergency, it could have some token that wan't withdrawn
       // this is different from debt
-      return Strategy(msg.sender).estimateTotalAssets();
+      return Strategy(msg.sender).estimatedTotalAssets();
     } else {
       return debt;
     }
