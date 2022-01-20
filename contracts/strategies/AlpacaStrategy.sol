@@ -139,6 +139,9 @@ contract StrategyAlpacaAutofarm is BaseStrategy {
 
   /**
    * Do anything necessary to prepare this Strategy for migration, such as transferring any reserve.
+   * This is used to migrate and withdraw assets from alpaca protocol under the ordinary condition.
+   * Generally, `forceMigrate` is false so it forces to withdraw all assets from alpaca protocol and do migration.
+   * but when facing issue with alpaca protocol so can't withdraw assets, then set forceMigrate true, so do migration without withdrawing assets from alpaca protocol
    */
   function prepareMigration(address _newStrategy) internal override {
     if (!forceMigrate) {
