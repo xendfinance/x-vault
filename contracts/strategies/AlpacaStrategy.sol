@@ -3,7 +3,7 @@ pragma solidity 0.6.12;
 pragma experimental ABIEncoderV2;
 
 import "./BaseStrategy.sol";
-import "../interfaces/alpaca/IVault.sol";
+import "../interfaces/alpaca/IAlpacaVault.sol";
 import "../interfaces/alpaca/IAlpacaFarm.sol";
 import "../interfaces/uniswap/IUniswapV2Router.sol";
 
