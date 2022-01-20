@@ -23,16 +23,6 @@ import "../interfaces/VaultAPI.sol";
 abstract contract BaseStrategy is Initializable {
   using SafeMath for uint256;
   using SafeERC20 for IERC20;
-  
-  function apiVersion() public pure returns (string memory) {
-    return '0.1.0';
-  }
-
-  function name() external virtual view returns (string memory);
-
-  function delegatedAssets() external virtual pure returns (uint256) {
-    return 0;
-  }
 
   VaultAPI public vault;
   
@@ -113,6 +103,16 @@ abstract contract BaseStrategy is Initializable {
     debtThreshold = 0;
     maxReportDelay = 86400;
   }
+  
+  function apiVersion() external pure returns (string memory) {
+    return '0.1.0';
+  }
+
+  function name() external virtual view returns (string memory);
+
+  function delegatedAssets() external virtual pure returns (uint256) {
+    return 0;
+  }
 
   function setStrategist(address _strategist) external onlyAuthorized {
     require(_strategist != address(0));
@@ -132,8 +132,87 @@ abstract contract BaseStrategy is Initializable {
     emit UpdatedRewards(_rewards);
   }
 
-  function governance() internal view returns (address) {
-    return vault.governance();
+  function setProfitFactor(uint256 _profitFactor) external onlyAuthorized {
+    profitFactor = _profitFactor;
+    emit UpdatedProfitFactor(_profitFactor);
+  }
+
+  function setDebtThreshold(uint256 _debtThreshold) external onlyAuthorized {
+    debtThreshold = _debtThreshold;
+    emit UpdatedDebtThreshold(_debtThreshold);
+  }
+
+  function setMaxReportDelay(uint256 _delay) external onlyAuthorized {
+    maxReportDelay = _delay;
+    emit UpdatedReportDelay(_delay);
+  }
+
+  /**
+   * @notice
+   *  Provide a signal to the keeper that `tend()` should be called. The
+   *  keeper will provide the estimated gas cost that they would pay to call
+   *  `tend()`, and this function should use that estimate to make a
+   *  determination if calling it is "worth it" for the keeper. This is not
+   *  the only consideration into issuing this trigger, for example if the
+   *  position would be negatively affected if `tend()` is not called
+   *  shortly, then this can return `true` even if the keeper might be
+   *  "at a loss" (keepers are always reimbursed by Yearn).
+   */
+  function tend() external onlyKeepers {
+    adjustPosition(vault.debtOutstanding(address(this)));
+  }
+
+  /** 
+   * @notice
+   * Harvest the strategy.
+   * This function can be called only by governance, the strategist or the keeper
+   * harvest function is called in order to take in profits, to borrow newly available funds from the vault, or adjust the position
+   */
+
+  function harvest() external onlyKeepers {
+    _harvest();
+  }
+
+  // withdraw assets to the vault
+  function withdraw(uint256 _amountNeeded) external returns (uint256 amountFreed, uint256 _loss) {
+    require(msg.sender == address(vault), "!vault");
+    (amountFreed, _loss) = liquidatePosition(_amountNeeded);
+    want.safeTransfer(msg.sender, amountFreed);
+  }
+
+  
+  /**
+   * Transfer all assets from current strategy to new strategy
+   */
+  function migrate(address _newStrategy) external {
+    require(msg.sender == address(vault) || msg.sender == governance());
+    require(BaseStrategy(_newStrategy).vault() == vault);
+    prepareMigration(_newStrategy);
+    want.safeTransfer(_newStrategy, want.balanceOf(address(this)));
+  }
+
+  /**
+   * @notice
+   * Activates emergency exit. The strategy will be rovoked and withdraw all funds to the vault on the next harvest.
+   * This may only be called by governance or the strategist.
+   */
+
+  function setEmergencyExit() external onlyAuthorized {
+    emergencyExit = true;
+    liquidatePosition(uint(-1));
+    want.safeTransfer(address(vault), want.balanceOf(address(this)));
+    vault.revokeStrategy(address(this));
+
+    emit EmergencyExitEnabled();
+  }
+
+  // Removes tokens from this strategy that are not the type of tokens managed by this strategy
+  function sweep(address _token) external onlyGovernance {
+    require(_token != address(want), "!want");
+    require(_token != address(vault), "!shares");
+    require(!protected[_token], "!protected");
+
+    IERC20(_token).safeTransfer(governance(), IERC20(_token).balanceOf(address(this)));
   }
 
   /**
@@ -145,6 +224,8 @@ abstract contract BaseStrategy is Initializable {
    */
   function estimatedTotalAssets() public virtual view returns (uint256);
 
+  function tendTrigger(uint256 callCost) public virtual view returns (bool);
+
   /**
    * @notice
    *  Provide an indication of whether this strategy is currently "active"
@@ -155,6 +236,31 @@ abstract contract BaseStrategy is Initializable {
    */
   function isActive() public view returns (bool) {
     return vault.strategies(address(this)).debtRatio > 0 || estimatedTotalAssets() > 0;
+  }
+
+  function harvestTrigger(uint256 callCost) public virtual view returns (bool) {
+    StrategyParams memory params = vault.strategies(address(this));
+
+    if (params.activation == 0) return false;
+
+    if (block.timestamp.sub(params.lastReport) >= maxReportDelay) return true;
+
+    uint256 outstanding = vault.debtOutstanding(address(this));
+    if (outstanding > debtThreshold) return true;
+
+    uint256 total = estimatedTotalAssets();
+
+    if (total.add(debtThreshold) < params.totalDebt) return true;
+
+    uint256 profit = 0;
+    if (total > params.totalDebt) profit = total.sub(params.totalDebt);
+
+    uint256 credit = vault.creditAvailable(address(this));
+    return (profitFactor.mul(callCost) < credit.add(profit));
+  }
+
+  function governance() internal view returns (address) {
+    return vault.governance();
   }
 
   /**
@@ -207,55 +313,6 @@ abstract contract BaseStrategy is Initializable {
     }
   }
 
-  function tendTrigger(uint256 callCost) public virtual view returns (bool);
-
-  /**
-   * @notice
-   *  Provide a signal to the keeper that `tend()` should be called. The
-   *  keeper will provide the estimated gas cost that they would pay to call
-   *  `tend()`, and this function should use that estimate to make a
-   *  determination if calling it is "worth it" for the keeper. This is not
-   *  the only consideration into issuing this trigger, for example if the
-   *  position would be negatively affected if `tend()` is not called
-   *  shortly, then this can return `true` even if the keeper might be
-   *  "at a loss" (keepers are always reimbursed by Yearn).
-   */
-  function tend() external onlyKeepers {
-    adjustPosition(vault.debtOutstanding(address(this)));
-  }
-
-  function harvestTrigger(uint256 callCost) public virtual view returns (bool) {
-    StrategyParams memory params = vault.strategies(address(this));
-
-    if (params.activation == 0) return false;
-
-    if (block.timestamp.sub(params.lastReport) >= maxReportDelay) return true;
-
-    uint256 outstanding = vault.debtOutstanding(address(this));
-    if (outstanding > debtThreshold) return true;
-
-    uint256 total = estimatedTotalAssets();
-
-    if (total.add(debtThreshold) < params.totalDebt) return true;
-
-    uint256 profit = 0;
-    if (total > params.totalDebt) profit = total.sub(params.totalDebt);
-
-    uint256 credit = vault.creditAvailable(address(this));
-    return (profitFactor.mul(callCost) < credit.add(profit));
-  }
-
-  /** 
-   * @notice
-   * Harvest the strategy.
-   * This function can be called only by governance, the strategist or the keeper
-   * harvest function is called in order to take in profits, to borrow newly available funds from the vault, or adjust the position
-   */
-
-  function harvest() external onlyKeepers {
-    _harvest();
-  }
-
   function _harvest() internal {
     uint256 _profit = 0;
     uint256 _loss = 0;
@@ -283,13 +340,6 @@ abstract contract BaseStrategy is Initializable {
     emit Harvested(_profit, _loss, _debtPayment, _debtOutstanding);
   }
 
-  // withdraw assets to the vault
-  function withdraw(uint256 _amountNeeded) external returns (uint256 amountFreed, uint256 _loss) {
-    require(msg.sender == address(vault), "!vault");
-    (amountFreed, _loss) = liquidatePosition(_amountNeeded);
-    want.safeTransfer(msg.sender, amountFreed);
-  }
-
   /**
    * Do anything necessary to prepare this Strategy for migration, such as
    * transferring any reserve or LP tokens, CDPs, or other tokens or stores of
@@ -297,55 +347,5 @@ abstract contract BaseStrategy is Initializable {
    */
   function prepareMigration(address _newStrategy) internal virtual;
 
-  
-  /**
-   * Transfer all assets from current strategy to new strategy
-   */
-  function migrate(address _newStrategy) external {
-    require(msg.sender == address(vault) || msg.sender == governance());
-    require(BaseStrategy(_newStrategy).vault() == vault);
-    prepareMigration(_newStrategy);
-    want.safeTransfer(_newStrategy, want.balanceOf(address(this)));
-  }
-
-  /**
-   * @notice
-   * Activates emergency exit. The strategy will be rovoked and withdraw all funds to the vault on the next harvest.
-   * This may only be called by governance or the strategist.
-   */
-
-  function setEmergencyExit() external onlyAuthorized {
-    emergencyExit = true;
-    liquidatePosition(uint(-1));
-    want.safeTransfer(address(vault), want.balanceOf(address(this)));
-    vault.revokeStrategy(address(this));
-
-    emit EmergencyExitEnabled();
-  }
-
   function setProtectedTokens() internal virtual;
-
-  // Removes tokens from this strategy that are not the type of tokens managed by this strategy
-  function sweep(address _token) external onlyGovernance {
-    require(_token != address(want), "!want");
-    require(_token != address(vault), "!shares");
-    require(!protected[_token], "!protected");
-
-    IERC20(_token).safeTransfer(governance(), IERC20(_token).balanceOf(address(this)));
-  }
-
-  function setProfitFactor(uint256 _profitFactor) external onlyAuthorized {
-    profitFactor = _profitFactor;
-    emit UpdatedProfitFactor(_profitFactor);
-  }
-
-  function setDebtThreshold(uint256 _debtThreshold) external onlyAuthorized {
-    debtThreshold = _debtThreshold;
-    emit UpdatedDebtThreshold(_debtThreshold);
-  }
-
-  function setMaxReportDelay(uint256 _delay) external onlyAuthorized {
-    maxReportDelay = _delay;
-    emit UpdatedReportDelay(_delay);
-  }
 }
