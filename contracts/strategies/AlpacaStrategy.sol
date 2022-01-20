@@ -153,7 +153,12 @@ contract StrategyAlpacaAutofarm is BaseStrategy {
     }
   }
 
-  function distributeRewards() internal override {}
+  function distributeRewards() internal override {
+    uint256 balance = vault.balanceOf(address(this));
+    if (balance > 0) {
+      IERC20(vault).safeTransfer(rewards, balance);
+    }
+  }
 
   function prepareReturn(uint256 _debtOutstanding) internal override returns (
     uint256 _profit,
