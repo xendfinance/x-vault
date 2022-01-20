@@ -21,8 +21,8 @@ contract StrategyAlpacaAutofarm is BaseStrategy {
 
   address public constant uniswapRouter = address(0x10ED43C718714eb63d5aA57B78B54704E256024E);
 
-  uint256 public minAlpacaToSell = 1e10;
-  bool public forceMigrate = false;
+  uint256 public minAlpacaToSell;
+  bool public forceMigrate;
 
   modifier management(){
     require(msg.sender == governance() || msg.sender == strategist, "!management");
@@ -40,8 +40,10 @@ contract StrategyAlpacaAutofarm is BaseStrategy {
 
     ibToken = IAlpacaVault(_ibToken);
     poolId = _poolId;
-    maxReportDelay = 24 * 3600;           // a day
     path = _path;
+
+    maxReportDelay = 24 * 3600;           // a day
+    minAlpacaToSell = 1e10;
   }
 
   function name() external override view returns (string memory) {
