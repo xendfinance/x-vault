@@ -94,8 +94,6 @@ abstract contract BaseStrategy is Initializable {
     _;
   }
 
-  constructor() public { }
-
   function initialize(
     address _vault
   ) public initializer {

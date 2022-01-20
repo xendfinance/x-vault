@@ -29,8 +29,6 @@ contract StrategyAlpacaAutofarm is BaseStrategy {
     _;
   }
 
-  constructor() public {}
-
   function initialize(
     address _vault, 
     address _ibToken, 
