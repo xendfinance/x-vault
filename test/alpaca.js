@@ -2,12 +2,15 @@ const { expectRevert, time } = require('@openzeppelin/test-helpers');
 // const { assertion } = require('@openzeppelin/test-helpers/src/expectRevert');
 const BN = require('bn.js');
 
+const VaultProxyAdmin = artifacts.require('VaultProxyAdmin');
 const XVault = artifacts.require('XVault');
+const VaultProxy = artifacts.require('VaultProxy');
 const Strategy = artifacts.require('Strategy');
+const StrategyProxy = artifacts.require('StrategyProxy');
 const StrategyAlpacaAutofarm = artifacts.require('StrategyAlpacaAutofarm');
 const USDT = require('./abi/USDT.json');
 
-contract('alpaca', async([dev, minter, admin, alice, bob]) => {
+contract('alpaca', async([guardian, governance, alice, bob]) => {
   
   async function report(vaultInstance, strategyInstance) {
     const strategy = await vaultInstance.strategies(strategyInstance.address);
@@ -47,24 +50,29 @@ contract('alpaca', async([dev, minter, admin, alice, bob]) => {
   beforeEach(async () => {
 
     this.usdtContract = new web3.eth.Contract(USDT, '0x55d398326f99059ff775485246999027b3197955');
-    this.vUSDTAddress = '0xfd5840cd36d94d7229439859c0112a4185bc0255';
 
-    this.xVault = await XVault.new(this.usdtContract.options.address, dev, '0x143afc138978Ad681f7C7571858FAAA9D426CecE', {
-      from: minter,
-    });
+
+    this.proxyAdmin = await VaultProxyAdmin.new({from: guardian})
+
+    this.xVault = await XVault.new({from: guardian})
+    this.vaultProxy = await VaultProxy.new(this.xVault.address, this.proxyAdmin.address, "0x", {from: guardian})
+    this.vaultInstance = await XVault.at(this.vaultProxy.address);
+    await this.vaultInstance.initialize(this.usdtContract.options.address, governance, '0x143afc138978Ad681f7C7571858FAAA9D426CecE', {from: guardian})
     const vaultName = await this.xVault.symbol();
     console.log(vaultName);
 
-    this.strategy = await Strategy.new(this.xVault.address, this.vUSDTAddress, 3, {
-      from: minter
-    });
+    
+    // this.strategy = await Strategy.new({from: guardian})
+    // this.strategyProxy = await StrategyProxy.new(this.strategy.address, this.proxyAdmin.address, {from: guardian})
+    // this.strategyInstance = await Strategy.at(this.strategyProxy.address)
 
     const path = [
       "0x8F0528cE5eF7B51152A59745bEfDD91D97091d2F", "0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56", "0x55d398326f99059ff775485246999027b3197955"
     ]
-    this.alpacaStrategy = await StrategyAlpacaAutofarm.new(this.xVault.address, '0x158Da805682BdC8ee32d52833aD41E74bb951E59', 16, path, {
-      from: minter
-    })
+    this.alpacaStrategy = await StrategyAlpacaAutofarm.new({from: guardian})
+    this.strategyProxy = await StrategyProxy.new(this.alpacaStrategy.address, this.proxyAdmin.address, "0x", {from: guardian})
+    this.alpacaInstance = await StrategyAlpacaAutofarm.at(this.strategyProxy.address)
+    await this.alpacaInstance.initialize(this.vaultInstance.address, '0x158Da805682BdC8ee32d52833aD41E74bb951E59', 16, path, {from: guardian})
     
     const usdtHolder = '0xefdca55e4bce6c1d535cb2d0687b5567eef2ae83';
     await this.usdtContract.methods.transfer(alice, "100000000000000000000000").send({
@@ -82,80 +90,80 @@ contract('alpaca', async([dev, minter, admin, alice, bob]) => {
     const balanceBefore = await this.usdtContract.methods.balanceOf(alice).call();
     
 
-    await this.xVault.addStrategy(this.strategy.address, '50', web3.utils.toWei('0.05'), '0');
-    await this.xVault.addStrategy(this.alpacaStrategy.address, '50', web3.utils.toWei('0.05'), '0');
+    // await this.vaultInstance.addStrategy(this.strategyInstance.address, '50', web3.utils.toWei('0.05'), '0');
+    await this.vaultInstance.addStrategy(this.alpacaInstance.address, '50', web3.utils.toWei('0.05'), '0', {from: governance});
     
-    await report(this.xVault, this.alpacaStrategy);
+    await report(this.vaultInstance, this.alpacaInstance);
     
     const depositedAmount = web3.utils.toWei('100000');
     
-    this.usdtContract.methods.approve(this.xVault.address, depositedAmount.toString()).send({
+    this.usdtContract.methods.approve(this.vaultInstance.address, depositedAmount.toString()).send({
       from: alice
     });
 
-    let apy = await this.xVault.getApy();
+    let apy = await this.vaultInstance.getApy();
     console.log('apy:', apy.toString());
 
-    await this.xVault.deposit(depositedAmount.toString(), {
+    await this.vaultInstance.deposit(depositedAmount.toString(), {
       from: alice
     });
 
     await time.increase(time.duration.days(5));
 
-    await this.alpacaStrategy.harvest({
-      from: minter
+    await this.alpacaInstance.harvest({
+      from: governance
     });
 
-    this.usdtContract.methods.approve(this.xVault.address, depositedAmount.toString()).send({
+    this.usdtContract.methods.approve(this.vaultInstance.address, depositedAmount.toString()).send({
       from: bob
     });
-    await this.xVault.deposit(depositedAmount.toString(), {
+    await this.vaultInstance.deposit(depositedAmount.toString(), {
       from: bob
     });
 
     await time.increase(time.duration.days(5));
-    await this.alpacaStrategy.harvest({
-      from: minter
+    await this.alpacaInstance.harvest({
+      from: governance
     });
     await time.increase(time.duration.days(5));
-    await report(this.xVault, this.alpacaStrategy);
+    await report(this.vaultInstance, this.alpacaInstance);
 
     for (i = 0; i < 10; i++) {
-      await this.alpacaStrategy.tend({
-        from: minter
+      await this.alpacaInstance.tend({
+        from: governance
       });
       await time.increase(time.duration.days(1));
     }
 
-    await this.alpacaStrategy.harvest({
-      from: minter
+    await this.alpacaInstance.harvest({
+      from: governance
     });
     
-    // await report(this.xVault, this.strategy);
+    // await report(this.vaultInstance, this.strategy);
 
-    let share = await this.xVault.balanceOf(alice);
-    await this.xVault.withdraw(share.toString(), alice, 1, {
+    let share = await this.vaultInstance.balanceOf(alice);
+    await this.vaultInstance.withdraw(share.toString(), alice, 1, {
       from: alice
     });
 
-    apy = await this.xVault.getApy();
+    apy = await this.vaultInstance.getApy();
     console.log('apy:', apy.toString());
 
     const balanceAfter = await this.usdtContract.methods.balanceOf(alice).call();
     console.log('balanceBefore:', web3.utils.fromWei(balanceBefore));
     console.log('balanceAfter: ', web3.utils.fromWei(balanceAfter))
 
-    share = await this.xVault.balanceOf(alice);
+    share = await this.vaultInstance.balanceOf(alice);
     console.log('alice xtoken balance:', share.toString())
 
-    await report(this.xVault, this.alpacaStrategy);
+    await report(this.vaultInstance, this.alpacaInstance);
 
-    const fee = await this.xVault.performanceFee();
+    const fee = await this.vaultInstance.performanceFee();
     console.log('vault fee:', fee.toString());
-    const totalSupply = await this.xVault.totalSupply();
+    const totalSupply = await this.vaultInstance.totalSupply();
     console.log('vault total supply:', web3.utils.fromWei(totalSupply.toString()));
 
-    const feeAmount = await this.xVault.balanceOf('0x143afc138978Ad681f7C7571858FAAA9D426CecE');
+    const feeAmount = await this.vaultInstance.balanceOf('0x143afc138978Ad681f7C7571858FAAA9D426CecE');
     console.log('fee Amount:', web3.utils.fromWei(feeAmount.toString()))
     
   });

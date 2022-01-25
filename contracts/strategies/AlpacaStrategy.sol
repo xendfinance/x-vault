@@ -23,6 +23,7 @@ contract StrategyAlpacaAutofarm is BaseStrategy {
 
   uint256 public minAlpacaToSell;
   bool public forceMigrate;
+  bool private adjusted;              // flag whether position adjusting was done in prepareReturn 
 
   modifier management(){
     require(msg.sender == governance() || msg.sender == strategist, "!management");
@@ -44,6 +45,10 @@ contract StrategyAlpacaAutofarm is BaseStrategy {
 
     maxReportDelay = 24 * 3600;           // a day
     minAlpacaToSell = 1e10;
+
+    want.safeApprove(address(ibToken), uint256(-1));
+    IERC20(alpacaToken).safeApprove(address(uniswapRouter), uint256(-1));
+    ibToken.approve(address(alpacaFarm), uint256(-1));
   }
 
   function name() external override view returns (string memory) {
@@ -137,6 +142,10 @@ contract StrategyAlpacaAutofarm is BaseStrategy {
     return (wantGasCost.mul(profitFactor) < credit);
   }
 
+  function farm() external {
+    _farm();
+  }
+
   /**
    * Do anything necessary to prepare this Strategy for migration, such as transferring any reserve.
    * This is used to migrate and withdraw assets from alpaca protocol under the ordinary condition.
@@ -188,6 +197,19 @@ contract StrategyAlpacaAutofarm is BaseStrategy {
 
     if (assetBalance > debt) {
       _profit = assetBalance - debt;
+      if (wantBalance < _profit) {
+        liquidatePosition(_profit.sub(wantBalance));
+        adjusted = true;
+        uint256 _wantBalance = want.balanceOf(address(this));
+        if (_wantBalance < _profit) {
+          // reserve is profit in case `profit` is greater than `_wantBalance`
+          _profit = _wantBalance;
+        }
+      } else if (wantBalance > _profit.add(_debtOutstanding)) {
+        _debtPayment = _debtOutstanding;
+      } else {
+        _debtPayment = wantBalance - _profit;
+      }
     } else {
       _loss = debt - assetBalance;
     }
@@ -195,6 +217,11 @@ contract StrategyAlpacaAutofarm is BaseStrategy {
   }
 
   function adjustPosition(uint256 _debtOutstanding) internal override {
+    if (adjusted) {
+      adjusted = false;
+      return;
+    }
+
     if (emergencyExit) {
       return;
     }
@@ -205,6 +232,15 @@ contract StrategyAlpacaAutofarm is BaseStrategy {
       _withdrawSome(_needed);
       return;
     }
+
+    _farm();
+  }
+
+  function _farm() internal {
+    uint256 _wantBal = want.balanceOf(address(this));
+    ibToken.deposit(_wantBal);
+    uint256 bal = ibToken.balanceOf(address(this));
+    alpacaFarm.deposit(address(this), poolId, bal);
   }
 
   function _withdrawSome(uint256 _amount) internal {
