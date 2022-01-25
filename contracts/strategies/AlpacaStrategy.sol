@@ -94,7 +94,7 @@ contract StrategyAlpacaAutofarm is BaseStrategy {
     uint256 estimatedAssets = estimatedTotalAssets();
 
     uint256 debt = vault.strategies(address(this)).totalDebt;
-    if (debt > estimatedAssets) {
+    if (debt >= estimatedAssets) {
       return 0;
     } else {
       return estimatedAssets - debt;
