@@ -7,7 +7,7 @@ import "../interfaces/alpaca/IAlpacaVault.sol";
 import "../interfaces/alpaca/IAlpacaFarm.sol";
 import "../interfaces/uniswap/IUniswapV2Router.sol";
 
-contract StrategyAlpacaAutofarm is BaseStrategy {
+contract StrategyAlpacaFarm is BaseStrategy {
   using SafeERC20 for IERC20;
   using Address for address;
   using SafeMath for uint256;
@@ -52,7 +52,7 @@ contract StrategyAlpacaAutofarm is BaseStrategy {
   }
 
   function name() external override view returns (string memory) {
-    return "StrategyAlpacaAutofarm";
+    return "StrategyAlpacaFarm";
   }
 
   function setForceMigrate(bool _force) external onlyGovernance {
