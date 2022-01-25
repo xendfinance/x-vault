@@ -55,10 +55,6 @@ contract StrategyAlpacaAutofarm is BaseStrategy {
     return "StrategyAlpacaAutofarm";
   }
 
-  function delegatedAssets() external override pure returns (uint256) {
-    return 0;
-  }
-
   function setForceMigrate(bool _force) external onlyGovernance {
     forceMigrate = _force;
   }
