@@ -115,19 +115,19 @@ abstract contract BaseStrategy is Initializable {
   }
 
   function setStrategist(address _strategist) external onlyAuthorized {
-    require(_strategist != address(0));
+    require(_strategist != address(0), "zero address");
     strategist = _strategist;
     emit UpdatedStrategist(_strategist);
   }
 
   function setKeeper(address _keeper) external onlyAuthorized {
-    require(_keeper != address(0));
+    require(_keeper != address(0), "zero address");
     keeper = _keeper;
     emit UpdatedKeeper(_keeper);
   }
 
   function setRewards(address _rewards) external onlyStrategist {
-    require(_rewards != address(0));
+    require(_rewards != address(0), "zero address");
     rewards = _rewards;
     emit UpdatedRewards(_rewards);
   }
@@ -185,8 +185,8 @@ abstract contract BaseStrategy is Initializable {
    * Transfer all assets from current strategy to new strategy
    */
   function migrate(address _newStrategy) external {
-    require(msg.sender == address(vault) || msg.sender == governance());
-    require(BaseStrategy(_newStrategy).vault() == vault);
+    require(msg.sender == address(vault) || msg.sender == governance(), "!vault or !governance");
+    require(BaseStrategy(_newStrategy).vault() == vault, "vault address is not the same");
     prepareMigration(_newStrategy);
     want.safeTransfer(_newStrategy, want.balanceOf(address(this)));
   }
