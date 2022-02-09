@@ -43,7 +43,6 @@ contract StrategyAlpacaFarm is BaseStrategy {
     poolId = _poolId;
     path = _path;
 
-    maxReportDelay = 24 * 3600;           // a day
     minAlpacaToSell = 1e10;
 
     want.safeApprove(address(ibToken), uint256(-1));
