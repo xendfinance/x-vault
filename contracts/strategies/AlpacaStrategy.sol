@@ -8,9 +8,7 @@ import "../interfaces/alpaca/IAlpacaFarm.sol";
 import "../interfaces/uniswap/IUniswapV2Router.sol";
 
 contract StrategyAlpacaFarm is BaseStrategy {
-  using SafeERC20 for IERC20;
   using Address for address;
-  using SafeMath for uint256;
 
   IAlpacaVault public ibToken;
   address public constant alpacaToken = address(0x8F0528cE5eF7B51152A59745bEfDD91D97091d2F);
