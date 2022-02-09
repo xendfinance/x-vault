@@ -7,7 +7,7 @@ const XVault = artifacts.require('XVault');
 const VaultProxy = artifacts.require('VaultProxy');
 const Strategy = artifacts.require('Strategy');
 const StrategyProxy = artifacts.require('StrategyProxy');
-const StrategyAlpacaAutofarm = artifacts.require('StrategyAlpacaAutofarm');
+const StrategyAlpacaAutofarm = artifacts.require('StrategyAlpacaFarm');
 const USDT = require('./abi/USDT.json');
 
 contract('alpaca', async([guardian, governance, alice, bob]) => {
