@@ -515,7 +515,7 @@ contract StrategyUgoHawkVenusUSDCFarm is BaseStrategy, ERC3156FlashBorrowerInter
     uint256 amount = amountDesired;
     bytes memory data = abi.encode(deficit, amount);
 
-    ERC3156FlashLenderInterface(crWant).flashLoan(this, address(this), amount, data);
+    ERC3156FlashLenderInterface(crWant).flashLoan(this, address(want), amount, data);
     emit Leverage(amountDesired, amount, deficit, crWant);
 
     return amount;
