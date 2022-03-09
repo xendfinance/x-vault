@@ -341,25 +341,35 @@ contract StrategyUgoHawkVenusUSDCFarm is BaseStrategy, ERC3156FlashBorrowerInter
 
     uint256 debt = vault.strategies(address(this)).totalDebt; 
 
-    // `balance` - `total debt` is profit
     if (balance > debt) {
-      _profit = balance - debt;
-      if (wantBalance < _profit) {
-        liquidatePosition(_profit);
-        adjusted = true;
-        uint256 _wantBalance = want.balanceOf(address(this));
-        if (_wantBalance < _profit) {
-          // all reserve is profit in case `profit` is greater than `_wantBalance`
-          _profit = _wantBalance;
-        }
-      } else if (wantBalance > _profit.add(_debtOutstanding)) {
+      _profit = balance.sub(debt);
+    } else {
+      _loss = debt.sub(balance);
+    }
+
+    if (wantBalance < _profit.add(_debtOutstanding)) {
+      liquidatePosition(_profit.add(_debtOutstanding));
+      adjusted = true;
+      wantBalance = want.balanceOf(address(this));
+      if (wantBalance >= _profit.add(_debtOutstanding)) {
         _debtPayment = _debtOutstanding;
+        if (_profit.add(_debtOutstanding).sub(_debtPayment) < _profit) {
+          _profit = _profit.add(_debtOutstanding).sub(_debtPayment);
+        }
       } else {
-        _debtPayment = wantBalance - _profit;
+        if (wantBalance < _debtOutstanding) {
+          _debtPayment = wantBalance;
+          _profit = 0;
+        } else {
+          _debtPayment = _debtOutstanding;
+          _profit = wantBalance.sub(_debtPayment);
+        }
       }
     } else {
-      _loss = debt - balance;
-      _debtPayment = _min(wantBalance, _debtOutstanding);
+      _debtPayment = _debtOutstanding;
+      if (_profit.add(_debtOutstanding).sub(_debtPayment) < _profit) {
+        _profit = _profit.add(_debtOutstanding).sub(_debtPayment);
+      }
     }
   }
 
