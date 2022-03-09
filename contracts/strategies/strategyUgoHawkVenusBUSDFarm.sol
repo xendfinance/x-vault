@@ -353,8 +353,8 @@ contract StrategyUgoHawkVenusBUSDFarm is BaseStrategy, ERC3156FlashBorrowerInter
       wantBalance = want.balanceOf(address(this));
       if (wantBalance >= _profit.add(_debtOutstanding)) {
         _debtPayment = _debtOutstanding;
-        if (_debtOutstanding.sub(_debtPayment) < _profit) {
-          _profit = _debtOutstanding.add(_profit).sub(_debtPayment);
+        if (_profit.add(_debtOutstanding).sub(_debtPayment) < _profit) {
+          _profit = _profit.add(_debtOutstanding).sub(_debtPayment);
         }
       } else {
         if (wantBalance < _debtOutstanding) {
@@ -367,8 +367,8 @@ contract StrategyUgoHawkVenusBUSDFarm is BaseStrategy, ERC3156FlashBorrowerInter
       }
     } else {
       _debtPayment = _debtOutstanding;
-      if (_debtOutstanding.sub(_debtPayment) < _profit) {
-        _profit = _debtOutstanding.sub(_debtPayment);
+      if (_profit.add(_debtOutstanding).sub(_debtPayment) < _profit) {
+        _profit = _profit.add(_debtOutstanding).sub(_debtPayment);
       }
     }
   }
