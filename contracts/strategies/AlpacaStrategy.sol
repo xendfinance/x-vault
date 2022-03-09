@@ -182,24 +182,35 @@ contract StrategyAlpacaFarm is BaseStrategy {
     uint256 debt = vault.strategies(address(this)).totalDebt;
 
     if (assetBalance > debt) {
-      _profit = assetBalance - debt;
-      if (wantBalance < _profit) {
-        liquidatePosition(_profit.sub(wantBalance));
-        adjusted = true;
-        uint256 _wantBalance = want.balanceOf(address(this));
-        if (_wantBalance < _profit) {
-          // reserve is profit in case `profit` is greater than `_wantBalance`
-          _profit = _wantBalance;
-        }
-      } else if (wantBalance > _profit.add(_debtOutstanding)) {
+      _profit = assetBalance.sub(debt);
+    } else {
+      _loss = debt.sub(assetBalance);
+    }
+
+    if (wantBalance < _profit.add(_debtOutstanding)) {
+      liquidatePosition(_profit.add(_debtOutstanding).sub(wantBalance));
+      adjusted = true;
+      wantBalance = want.balanceOf(address(this));
+      if (wantBalance >= _profit.add(_debtOutstanding)) {
         _debtPayment = _debtOutstanding;
+        if (_profit.add(_debtOutstanding).sub(_debtPayment) < _profit) {
+          _profit = _profit.add(_debtOutstanding).sub(_debtPayment);
+        }
       } else {
-        _debtPayment = wantBalance - _profit;
+        if (wantBalance < _debtOutstanding) {
+          _debtPayment = wantBalance;
+          _profit = 0;
+        } else {
+          _debtPayment = _debtOutstanding;
+          _profit = wantBalance.sub(_debtPayment);
+        }
       }
     } else {
-      _loss = debt - assetBalance;
+      _debtPayment = _debtOutstanding;
+      if (_profit.add(_debtOutstanding).sub(_debtPayment) < _profit) {
+        _profit = _profit.add(_debtOutstanding).sub(_debtPayment);
+      }
     }
-    _debtPayment = _min(_debtOutstanding, _profit);
   }
 
   function adjustPosition(uint256 _debtOutstanding) internal override {
