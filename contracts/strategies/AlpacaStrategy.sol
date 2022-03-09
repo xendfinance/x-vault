@@ -281,7 +281,7 @@ contract StrategyAlpacaFarm is BaseStrategy {
   
 
   function priceCheck(address start, address end, uint256 _amount) public view returns (uint256) {
-    if (_amount == 0) {
+    if (_amount < minAlpacaToSell) {
       return 0;
     }
 
