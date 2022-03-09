@@ -292,7 +292,7 @@ contract StrategyUgoHawkVenusUSDCFarm is BaseStrategy, ERC3156FlashBorrowerInter
   }
 
   function priceCheck(address start, address end, uint256 _amount) public view returns (uint256) {
-    if (_amount == 0) {
+    if (_amount < minXvsToSell) {
       return 0;
     }
 
