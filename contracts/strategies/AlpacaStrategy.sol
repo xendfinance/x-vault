@@ -70,7 +70,7 @@ contract StrategyAlpacaFarm is BaseStrategy {
    */
   function estimatedTotalAssets() public override view returns (uint256) {
     (uint256 stakedBalance, , , ) = alpacaFarm.userInfo(poolId, address(this));
-    uint256 assets = ibToken.debtShareToVal(ibToken.balanceOf(address(this)).add(stakedBalance));
+    uint256 assets = ibToken.balanceOf(address(this)).add(stakedBalance).mul(ibToken.totalToken()).div(ibToken.totalSupply());
     uint256 claimableAlpaca = alpacaFarm.pendingAlpaca(poolId, address(this));
     uint256 currentAlpaca = IERC20(alpacaToken).balanceOf(address(this));
 
@@ -178,7 +178,7 @@ contract StrategyAlpacaFarm is BaseStrategy {
 
     uint256 wantBalance = want.balanceOf(address(this));
 
-    uint256 assetBalance = ibToken.debtShareToVal(stakedBalance).add(wantBalance);
+    uint256 assetBalance = stakedBalance.mul(ibToken.totalToken()).div(ibToken.totalSupply()).add(wantBalance);
     uint256 debt = vault.strategies(address(this)).totalDebt;
 
     if (assetBalance > debt) {
@@ -241,7 +241,7 @@ contract StrategyAlpacaFarm is BaseStrategy {
   }
 
   function _withdrawSome(uint256 _amount) internal {
-    uint256 _amountShare = ibToken.debtValToShare(_amount);
+    uint256 _amountShare = _amount.mul(ibToken.totalSupply()).div(ibToken.totalToken());
     alpacaFarm.withdraw(address(this), poolId, _amountShare);
     ibToken.withdraw(IERC20(ibToken).balanceOf(address(this)));
     _disposeAlpaca();
@@ -268,7 +268,7 @@ contract StrategyAlpacaFarm is BaseStrategy {
 
   function liquidatePosition(uint256 _amountNeeded) internal override returns (uint256 _amountFreed, uint256 _loss) {
     (uint256 stakedBalance, , , ) = alpacaFarm.userInfo(poolId, address(this));
-    uint256 assets = ibToken.debtShareToVal(stakedBalance);
+    uint256 assets = stakedBalance.mul(ibToken.totalToken()).div(ibToken.totalSupply());
 
     uint256 debtOutstanding = vault.debtOutstanding(address(this));
     if (debtOutstanding > assets) {
