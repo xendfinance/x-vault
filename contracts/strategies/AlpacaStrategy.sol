@@ -112,6 +112,9 @@ contract StrategyAlpacaFarm is BaseStrategy {
     
     if (params.activation == 0) return false;
 
+    // trigger if hadn't been called in a while
+    if (block.timestamp.sub(params.lastReport) >= maxReportDelay) return true;
+
     uint256 wantGasCost = priceCheck(wbnb, address(want), gasCost);
     uint256 alpacaGasCost = priceCheck(wbnb, alpacaToken, gasCost);
 
