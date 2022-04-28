@@ -221,9 +221,11 @@ abstract contract BaseStrategy is Initializable {
    *  denominated in terms of `want` tokens.
    * @return The estimated total assets in this Strategy.
    */
-  function estimatedTotalAssets() public virtual view returns (uint256);
+  function estimatedTotalAssets() external virtual view returns (uint256) {
+    return _estimatedTotalAssets();
+  }
 
-  function tendTrigger(uint256 callCost) public virtual view returns (bool);
+  function tendTrigger(uint256 callCost) external virtual view returns (bool);
 
   /**
    * @notice
@@ -233,11 +235,11 @@ abstract contract BaseStrategy is Initializable {
    *  events can be tracked externally by indexing agents.
    * @return True if the strategy is actively managing a position.
    */
-  function isActive() public view returns (bool) {
-    return vault.strategies(address(this)).debtRatio > 0 || estimatedTotalAssets() > 0;
+  function isActive() external view returns (bool) {
+    return vault.strategies(address(this)).debtRatio > 0 || _estimatedTotalAssets() > 0;
   }
 
-  function harvestTrigger(uint256 callCost) public virtual view returns (bool) {
+  function harvestTrigger(uint256 callCost) external virtual view returns (bool) {
     StrategyParams memory params = vault.strategies(address(this));
 
     if (params.activation == 0) return false;
@@ -247,7 +249,7 @@ abstract contract BaseStrategy is Initializable {
     uint256 outstanding = vault.debtOutstanding(address(this));
     if (outstanding > debtThreshold) return true;
 
-    uint256 total = estimatedTotalAssets();
+    uint256 total = _estimatedTotalAssets();
 
     if (total.add(debtThreshold) < params.totalDebt) return true;
 
@@ -261,6 +263,8 @@ abstract contract BaseStrategy is Initializable {
   function governance() internal view returns (address) {
     return vault.governance();
   }
+
+  function _estimatedTotalAssets() internal virtual view returns (uint256);
 
   /**
    * Perform any Strategy unwinding or other calls necessary to capture the
@@ -319,7 +323,7 @@ abstract contract BaseStrategy is Initializable {
     uint256 _debtPayment = 0;
 
     if (emergencyExit) {
-      uint256 totalAssets = estimatedTotalAssets();     // accurated estimate for the total amount of assets that the strategy is managing in terms of want token.
+      uint256 totalAssets = _estimatedTotalAssets();     // accurated estimate for the total amount of assets that the strategy is managing in terms of want token.
       (_debtPayment, _loss) = liquidatePosition(totalAssets > _debtOutstanding ? totalAssets : _debtOutstanding);
       if (_debtPayment > _debtOutstanding) {
         _profit = _debtPayment.sub(_debtOutstanding);
