@@ -1,3 +1,5 @@
+require("@nomiclabs/hardhat-waffle");
+
 /**
  * @type import('hardhat/config').HardhatUserConfig
  */
@@ -7,15 +9,22 @@ module.exports = {
     settings: {
       optimizer: {
         enabled: false,
-        runs: 1000,
+        runs: 200,
       }
     }
   },
   networks: {
     hardhat: {
       forking: {
-        url: `https://bsc.getblock.io/mainnet/?api_key=${process.env.GETBLOCK_API_KEY}`
-      }
+        url: `https://rpc.ankr.com/bsc`,
+        blockNumber: 17286219,
+      },
+    },
+    localhost: {
+      url: 'http://localhost:8545',
     }
-  }
+  },
+  mocha: {
+    timeout: 400000
+  },
 };

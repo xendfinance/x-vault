@@ -6,14 +6,17 @@ import "../interfaces/alpaca/IAlpacaVault.sol";
 import "../interfaces/alpaca/IProxyWalletRegistry.sol";
 import "../interfaces/alpaca/IAlpacaFarm.sol";
 import "../interfaces/uniswap/IUniswapV2Router.sol";
+import "../interfaces/flashloan/ERC3156FlashBorrowerInterface.sol";
+import "../interfaces/flashloan/ERC3156FlashLenderInterface.sol";
 
-contract StrategyAlpha {
+contract StrategyAlpha is ERC3156FlashBorrowerInterface {
   address want = 0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56;
   IProxyWalletRegistry public constant proxyWalletRegistry = IProxyWalletRegistry(0x13e3Bc3c6A96aE3beaDD1B08531Fde979Dd30aEa);
   IProxyWallet proxy;
 
   address public proxyActions = 0x1391FB5efc2394f33930A0CfFb9d407aBdbf1481;
   address vault = 0x7C9e73d4C71dae564d41F78d56439bB4ba87592f;
+  address crWant = 0x2Bc4eb013DDee29D37920938B96d353171289B7C;
   address positionManager = 0xABA0b03eaA3684EB84b51984add918290B41Ee19;
   address stabilityFeeCollector = 0x45040e48C00b52D9C0bd11b8F577f188991129e6;
   address tokenAdapter = 0x4f56a92cA885bE50E705006876261e839b080E36;
@@ -25,8 +28,26 @@ contract StrategyAlpha {
     IERC20(want).approve(address(proxy), uint256(-1));
     IERC20(vault).approve(address(proxy), uint256(-1));
   }
+
+  function execute() external {
+    uint256 amount = 1000 * 1e18;
+    bytes memory data = abi.encode(amount);
+    ERC3156FlashLenderInterface(crWant).flashLoan(this, address(want), amount, data);
+  }
+
+  function onFlashLoan(address initiator, address token, uint256 amount, uint256 fee, bytes calldata data) override external returns (bytes32) {
+    require(initiator == address(this), "caller is not this contract");
+    uint256 borrowAmount = abi.decode(data, (uint256));
+    require(borrowAmount == amount, "encoded data (borrowAmount) does not match");
+    require(msg.sender == crWant, "Not Flash Loan Provider");
+    
+    openInvestBusd();
+
+    IERC20(token).approve(msg.sender, amount + fee);
+    return keccak256("ERC3156FlashBorrowerInterface.onFlashLoan");
+  }
   
-  function openInvestBusd() external {
+  function openInvestBusd() public {
     
 
     // invest busd and lend ausd
