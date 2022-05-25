@@ -146,21 +146,6 @@ abstract contract BaseStrategy is Initializable {
     emit UpdatedReportDelay(_delay);
   }
 
-  /**
-   * @notice
-   *  Provide a signal to the keeper that `tend()` should be called. The
-   *  keeper will provide the estimated gas cost that they would pay to call
-   *  `tend()`, and this function should use that estimate to make a
-   *  determination if calling it is "worth it" for the keeper. This is not
-   *  the only consideration into issuing this trigger, for example if the
-   *  position would be negatively affected if `tend()` is not called
-   *  shortly, then this can return `true` even if the keeper might be
-   *  "at a loss" (keepers are always reimbursed by Yearn).
-   */
-  function tend() external onlyKeepers {
-    adjustPosition(vault.debtOutstanding(address(this)));
-  }
-
   /** 
    * @notice
    * Harvest the strategy.
@@ -224,8 +209,6 @@ abstract contract BaseStrategy is Initializable {
   function estimatedTotalAssets() external view returns (uint256) {
     return _estimatedTotalAssets();
   }
-
-  function tendTrigger(uint256 callCost) external virtual view returns (bool);
 
   /**
    * @notice
