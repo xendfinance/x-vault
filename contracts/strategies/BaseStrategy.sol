@@ -221,7 +221,7 @@ abstract contract BaseStrategy is Initializable {
    *  denominated in terms of `want` tokens.
    * @return The estimated total assets in this Strategy.
    */
-  function estimatedTotalAssets() external virtual view returns (uint256) {
+  function estimatedTotalAssets() external view returns (uint256) {
     return _estimatedTotalAssets();
   }
 
