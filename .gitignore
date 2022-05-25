@@ -2,6 +2,7 @@
 /.idea/
 /secrets.json
 /scripts/
+/.vscode/
 # /migrations/
 /build/
 
