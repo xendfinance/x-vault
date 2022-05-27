@@ -941,7 +941,7 @@ contract XVault is IERC20, Context, ReentrancyGuard, Initializable {
     } else {
       uint256 valuePerShare = _totalAssets().mul(1000000000).div(totalSupply());
       if (valuePerShare > lastValuePerShare) {
-        apy = valuePerShare.sub(lastValuePerShare).mul(365 days).div(block.timestamp.sub(lastReport)).mul(1000).div(lastValuePerShare);
+        apy = valuePerShare.sub(lastValuePerShare).mul(365 days).div(block.timestamp.sub(lastReport)).mul(MAX_BPS).div(lastValuePerShare);
       } else {
         apy = 0;
       }
