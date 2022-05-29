@@ -173,7 +173,7 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
       _assets = collateral.add(claimableValue).add(est);
     } else {
       uint256 est = debt.sub(lpValue);
-      _assets = collateral.add(claimable).sub(est);
+      _assets = collateral.add(claimableValue).sub(est);
     }
 
     return _assets;
