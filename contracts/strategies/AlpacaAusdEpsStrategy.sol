@@ -206,8 +206,9 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
     // match debt to staked amount of ausd of ausd3eps
     (uint256 stakedBalance, , , ) = alpacaFarm.userInfo(poolId, address(this));
     uint256 lpValue = IZap(zap).calc_withdraw_one_coin(pool, stakedBalance, 0);
+    uint256 addedLpValue;
     if (debt > lpValue) {
-      _mintAndStakeAusd(debt.sub(lpValue), true);
+      addedLpValue = _mintAndStakeAusd(debt.sub(lpValue), true);
     } else if (debt < lpValue && lpValue.sub(debt) > minAlpacaToSell) {
       uint256 lpToWithdraw = IZap(zap).calc_token_amount(pool, [lpValue.sub(debt), 0, 0, 0], true);
       alpacaFarm.withdraw(address(this), poolId, lpToWithdraw);
@@ -217,6 +218,9 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
     uint256 wantBalance = want.balanceOf(address(this));
     
     uint256 assetBalance = collateral.add(wantBalance);
+    if (addedLpValue > 0) {
+      assetBalance = collateral.add(wantBalance).sub(debt).add(lpValue).add(addedLpValue);
+    }
     uint256 totalDebt = vault.strategies(address(this)).totalDebt;
 
     if (assetBalance > totalDebt) {
@@ -382,20 +386,22 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
     proxyWallet.execute(proxyActions, _data);
   }
 
-  function _mintAndStakeAusd(uint256 amount, bool flag) internal {
+  function _mintAndStakeAusd(uint256 amount, bool flag) internal returns (uint256) {
     uint256 wantBal = IERC20(want).balanceOf(address(this));
     amount = _min(wantBal, amount);
     if (amount < minAlpacaToSell) {
-      return;
+      return 0;
     }
     
     IStableSwap(curveRouter).exchange_underlying(1, 0, amount, 0);
 
+    uint256 depositAmount = IERC20(ausd).balanceOf(address(this));
     if (flag) {
-      uint256 depositAmount = IERC20(ausd).balanceOf(address(this));
       IZap(zap).add_liquidity(pool, [depositAmount, 0, 0, 0], 0);
       alpacaFarm.deposit(address(this), poolId, IERC20(ausd3eps).balanceOf(address(this)));
     }
+
+    return depositAmount;
   }
 
   // claims Alpaca reward token
