@@ -22,7 +22,6 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
   address constant tokenAdapter = 0x4f56a92cA885bE50E705006876261e839b080E36;
   address constant stablecoinAdapter = 0xD409DA25D32473EFB0A1714Ab3D0a6763bCe4749;
   address constant bookKeeper = 0xD0AEcee1520B5F9925D952405F9A06Dcd8fd6e6C;
-  address constant stableSwapModule = 0xd16004424b9C3f0A7C74C4c8dcDa0D8C4D513fAC;
   bytes32 constant collateralPoolId = 0x6962425553440000000000000000000000000000000000000000000000000000;
 
   address public constant alpacaToken = address(0x8F0528cE5eF7B51152A59745bEfDD91D97091d2F);
@@ -67,7 +66,6 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
 
     want.safeApprove(address(ibToken), uint256(-1));
     want.safeApprove(address(curveRouter), uint256(-1));
-    want.safeApprove(address(stableSwapModule), uint256(-1));
     want.safeApprove(address(proxyWallet), uint256(-1));
     IERC20(alpacaToken).safeApprove(address(uniswapRouter), uint256(-1));
     IERC20(ausd).safeApprove(address(zap), uint256(-1));
@@ -385,15 +383,13 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
   }
 
   function _mintAndStakeAusd(uint256 amount, bool flag) internal {
+    uint256 wantBal = IERC20(want).balanceOf(address(this));
+    amount = _min(wantBal, amount);
     if (amount < minAlpacaToSell) {
       return;
     }
-    uint256 est = IStableSwap(curveRouter).get_dy_underlying(1, 0, amount);
-    if (est > amount) {
-      IStableSwap(curveRouter).exchange_underlying(1, 0, amount, 0);
-    } else {
-      IStableSwapModule(stableSwapModule).swapTokenToStablecoin(address(this), amount);
-    }
+    
+    IStableSwap(curveRouter).exchange_underlying(1, 0, amount, 0);
 
     if (flag) {
       uint256 depositAmount = IERC20(ausd).balanceOf(address(this));
