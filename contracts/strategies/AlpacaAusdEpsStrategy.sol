@@ -48,6 +48,12 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
     _;
   }
 
+  /**
+   * @notice initialize the contract
+   * @param _vault vault address to what the strategy belongs
+   * @param _ibToken Alpaca Interest Bearing token address that would be used
+   * @param _path pancakeswap path for converting alpaca to underlying token
+   */
   function initialize(
     address _vault, 
     address _ibToken,
@@ -75,24 +81,40 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
     IERC20(ausd3eps).safeApprove(address(alpacaFarm), uint256(-1));
   }
 
+  /**
+   * @notice strategy contract name
+   */
   function name() external override view returns (string memory) {
     return "StrategyAlpacaAUSDEPSFarm";
   }
 
+  /**
+   * @notice set flag for forceful migration. For migration, check migrate function
+   * @param _force true means forceful migration
+   */
   function setForceMigrate(bool _force) external onlyGovernance {
     forceMigrate = _force;
   }
 
-  function setMinAutoToSell(uint256 _minAlpacaToSell) external management {
+  /**
+   * @notice set minimum amount of alpaca token to sell
+   * @param _minAlpacaToSell amount of token, wad
+   */
+  function setMinAlpacaToSell(uint256 _minAlpacaToSell) external management {
     minAlpacaToSell = _minAlpacaToSell;
   }
 
+  /**
+   * @notice set pancakeswap path for converting alpaca to underlying token
+   * @param _path pancakeswap path
+   */
   function setDisposalPath(address[] memory _path) external management {
     path = _path;
   }
 
   /**
-   * View how much the vault expect this strategy to return at the current block, based on its present performance (since its last report)
+   * @notice View how much the vault expect this strategy to return at the current block, 
+   *  based on its present performance (since its last report)
    */
   function expectedReturn() external view returns (uint256) {
     uint256 estimatedAssets = _estimatedTotalAssets();
@@ -110,6 +132,7 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
    *  Provide a signal to the keeper that harvest should be called.
    *  The keeper will provide the estimated gas cost that they would pay to call
    *  harvest() function.
+   * @param gasCost gas amount. wad
    */
   function harvestTrigger(uint256 gasCost) external override view returns (bool) {
     StrategyParams memory params = vault.strategies(address(this));
@@ -143,6 +166,10 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
     return (wantGasCost.mul(profitFactor) < credit);
   }
 
+  /**
+   * @notice set collateral factor for borrowing assets
+   * @param _collateralFactor collateral factor value. base point is `MAX_BPS`
+   */
   function setCollateralFactor(uint256 _collateralFactor) external management {
     require(_collateralFactor > 0, "!zero");
     collateralFactor = _collateralFactor;
@@ -156,13 +183,14 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
   function _estimatedTotalAssets() internal override view returns (uint256 _assets) {
     (uint256 collateral, uint256 debt, uint256 claimable) = _getCurrentPosition();
     
-    // add up alpaca rewards from alpaca farm and ausd farm
-    // alpaca rewards of ausd farm distributed in two places, one is proxyWallet and the other is reward generation
+    // add up ALPACA rewards from alpaca staking vault and ausd lending protocol
+    // ALPACA reward of AUSD lending protocol is distributed in two places, one is proxyWallet and the other is pending on contract
     uint256 claimableAlpaca = claimable.add(IERC20(alpacaToken).balanceOf(address(proxyWallet))).add(alpacaFarm.pendingAlpaca(poolId, address(this)));
     uint256 currentAlpaca = IERC20(alpacaToken).balanceOf(address(this));
     uint256 claimableValue = _priceCheck(alpacaToken, address(want), claimableAlpaca.add(currentAlpaca));
     claimableValue = claimableValue.mul(9).div(10);      // remaining 10% will be used for compensate offset
 
+    // `lpValue` is AUSD amount. get AUSD amount equal to staked liquidity lp.
     (uint256 stakedBalance, , , ) = alpacaFarm.userInfo(poolId, address(this));
     uint256 lpValue = IZap(zap).calc_withdraw_one_coin(pool, stakedBalance, 0);
 
@@ -177,6 +205,7 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
     return _assets;
   }
 
+  // get the position for alpaca AUSD lending protocol
   function _getCurrentPosition() internal view returns (uint256 lockedCollateralValue, uint256 debt, uint256 claimable) {
     uint256 positionId = IPositionManager(positionManager).ownerFirstPositionId(address(proxyWallet));
     address positionHandler = IPositionManager(positionManager).positions(positionId);
@@ -203,9 +232,9 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
     _claimAlpaca();
     _disposeAlpaca();
 
-    // match debt to staked amount of ausd of ausd3eps
     (uint256 stakedBalance, , , ) = alpacaFarm.userInfo(poolId, address(this));
     uint256 lpValue = IZap(zap).calc_withdraw_one_coin(pool, stakedBalance, 0);
+    // if AUSD amount that staked in ausd3eps liquidity is over AUSD debt on AUSD lending protocol, adjust them to keep the same amount. vice versa
     uint256 addedLpValue;
     if (debt > lpValue) {
       addedLpValue = _mintAndStakeAusd(debt.sub(lpValue), true);
@@ -230,8 +259,9 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
     }
 
     if (wantBalance < _profit.add(_debtOutstanding)) {
+    // if balance of `want` is less than needed, adjust position to get more `want`
       liquidatePosition(_profit.add(_debtOutstanding));
-      adjusted = true;
+      adjusted = true;    // prevent against adjusting position to be called again as `liquidityPosition` already adjusted position
       wantBalance = want.balanceOf(address(this));
       if (wantBalance >= _profit.add(_debtOutstanding)) {
         _debtPayment = _debtOutstanding;
@@ -275,6 +305,7 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
     _farm(_wantBal - _debtOutstanding);
   }
 
+  // adjust position by keeping collateral ratio and stake new AUSD assets to ausd3eps liquidity
   function _farm(uint256 amount) internal {
     if (amount == 0) return;
 
@@ -291,6 +322,7 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
     alpacaFarm.deposit(address(this), poolId, IERC20(ausd3eps).balanceOf(address(this)));
   }
 
+  // withdraw `_amount` of want from alpaca AUSD lending protocol
   function _withdrawSome(uint256 _amount) internal {
     (uint256 collateral, uint256 debt, ) = _getCurrentPosition();
     if (_amount > collateral) {
@@ -299,6 +331,7 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
     uint256 desiredCollateralValue = collateral.sub(_amount);
     uint256 desiredDebt = desiredCollateralValue.mul(collateralFactor).div(MAX_BPS);
     if (desiredDebt <= 500e18) {
+    // alpaca doesn't allow the AUSD debt size to be lower than 500e18, so in that case, should close position completely
       (uint256 stakedLp, , , ) = alpacaFarm.userInfo(poolId, address(this));
       alpacaFarm.withdraw(address(this), poolId, stakedLp);
       IZap(zap).remove_liquidity_one_coin(pool, stakedLp, 0, 0);
@@ -310,6 +343,7 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
       }
       convertLockTokenAndDraw(collateral.mul(ibToken.totalSupply()).div(ibToken.totalToken()).add(1), uint256(-1), false);
     } else {
+    // if not lower than 500e18, adjust position normally
       uint256 repay = debt.sub(desiredDebt);
 
       uint256 lpToWithdraw = IZap(zap).calc_token_amount(pool, [repay, 0, 0, 0], true);
@@ -325,6 +359,7 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
   }
 
 
+  // Alpaca AUSD lending protocol position adjust functions. lends `amount` of want and borrow `stablecoinAmount` of AUSD or vice versa
   function convertLockTokenAndDraw(uint256 amount, uint256 stablecoinAmount, bool flag) internal {
     uint256 positionId = IPositionManager(positionManager).ownerFirstPositionId(address(proxyWallet));
     bytes memory _data;
@@ -357,6 +392,7 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
         );
       }
     } else {
+      // completely close position
       if (stablecoinAmount == uint256(-1)) {
         _data = abi.encodeWithSignature(
           "wipeAllUnlockTokenAndConvert(address,address,address,address,uint256,uint256,bytes)", 
@@ -386,6 +422,7 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
     proxyWallet.execute(proxyActions, _data);
   }
 
+  // swap want balance to AUSD to match debt. if `flag` is true, stake AUSD to ausd3eps liquidity
   function _mintAndStakeAusd(uint256 amount, bool flag) internal returns (uint256) {
     uint256 wantBal = IERC20(want).balanceOf(address(this));
     amount = _min(wantBal, amount);
