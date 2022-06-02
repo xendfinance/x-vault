@@ -202,6 +202,8 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
       _assets = collateral.add(claimableValue).sub(est);
     }
 
+    _assets = _assets.add(IERC20(want).balanceOf(address(this)));
+
     return _assets;
   }
 
