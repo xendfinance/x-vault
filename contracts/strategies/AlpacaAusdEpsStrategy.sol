@@ -43,6 +43,9 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
   bool public forceMigrate;
   bool private adjusted;              // flag whether position adjusting was done in prepareReturn 
 
+  event MinAlpacaToSellUpdated(uint256 newVal);
+  event CollateralFactorUpdated(uint256 newVal);
+
   modifier management(){
     require(msg.sender == governance() || msg.sender == strategist, "!management");
     _;
@@ -102,6 +105,7 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
    */
   function setMinAlpacaToSell(uint256 _minAlpacaToSell) external management {
     minAlpacaToSell = _minAlpacaToSell;
+    emit MinAlpacaToSellUpdated(_minAlpacaToSell);
   }
 
   /**
@@ -173,7 +177,7 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
   function setCollateralFactor(uint256 _collateralFactor) external management {
     require(_collateralFactor > 0, "!zero");
     collateralFactor = _collateralFactor;
-    
+    emit CollateralFactorUpdated(_collateralFactor);
   }
 
   //////////////////////////////////
