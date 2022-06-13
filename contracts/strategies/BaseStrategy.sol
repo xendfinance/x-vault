@@ -103,10 +103,6 @@ abstract contract BaseStrategy is Initializable {
     maxReportDelay = 86400;
   }
   
-  function apiVersion() external pure returns (string memory) {
-    return '0.1.0';
-  }
-
   function name() external virtual view returns (string memory);
 
   function setStrategist(address _strategist) external onlyAuthorized {
