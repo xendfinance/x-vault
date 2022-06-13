@@ -109,10 +109,6 @@ abstract contract BaseStrategy is Initializable {
 
   function name() external virtual view returns (string memory);
 
-  function delegatedAssets() external virtual pure returns (uint256) {
-    return 0;
-  }
-
   function setStrategist(address _strategist) external onlyAuthorized {
     require(_strategist != address(0), "zero address");
     strategist = _strategist;
