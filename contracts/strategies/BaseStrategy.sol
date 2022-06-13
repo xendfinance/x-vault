@@ -83,6 +83,10 @@ abstract contract BaseStrategy is Initializable {
     _;
   }
 
+  /**
+   * @notice initialize the contract varaibles
+   * @param _vault vault address to what the strategy belongs
+   */
   function initialize(
     address _vault
   ) public initializer {
@@ -103,53 +107,98 @@ abstract contract BaseStrategy is Initializable {
     maxReportDelay = 86400;
   }
   
+  /**
+   * @notice get the strategy contract name. need to be implemented in the child contract
+   */
   function name() external virtual view returns (string memory);
 
+  /**
+   * @notice set the strategist address
+   * @dev only strategist or governance can change it
+   * @param _strategist the address of a strategist
+   */
   function setStrategist(address _strategist) external onlyAuthorized {
     require(_strategist != address(0), "zero address");
     strategist = _strategist;
     emit UpdatedStrategist(_strategist);
   }
 
+  /**
+   * @notice set the keeper address
+   * @dev only strategist or governance can change it
+   * @param _keeper the address of a keeper
+   */
   function setKeeper(address _keeper) external onlyAuthorized {
     require(_keeper != address(0), "zero address");
     keeper = _keeper;
     emit UpdatedKeeper(_keeper);
   }
 
+  /**
+   * @notice set the reward receipient address for strategist
+   * @dev only strategist can change it
+   * @param _rewards the address of a receipient for the strategist
+   */
   function setRewards(address _rewards) external onlyStrategist {
     require(_rewards != address(0), "zero address");
     rewards = _rewards;
     emit UpdatedRewards(_rewards);
   }
 
+  /**
+   * @notice Used to change `profitFactor`.
+   *    `profitFactor` is used to determine if it's worthwhile to harvest given 
+   *    gas cost.
+   * @dev This may only be called by governance or the strategist.
+   * @param _profitFactor A ratio to multiply anticipated `harvest()` gas cost against.
+   */
   function setProfitFactor(uint256 _profitFactor) external onlyAuthorized {
     profitFactor = _profitFactor;
     emit UpdatedProfitFactor(_profitFactor);
   }
 
+  /**
+   * @notice Sets how for the Strategy can go into loss without a harvest and report 
+   *    being required.
+   *    By default, this is 0, meaning any loss would cause a harvest which will 
+   *    subsequently report the loss to the Vault for tracking.
+   * @dev This may only be called by governance or the strategist.
+   * @param _debtThreshold How big of a loss this Strategy may carry without being
+   *    required to report to the Vault.
+   */
   function setDebtThreshold(uint256 _debtThreshold) external onlyAuthorized {
     debtThreshold = _debtThreshold;
     emit UpdatedDebtThreshold(_debtThreshold);
   }
 
+  /**
+   * @notice Used to change `maxReportDelay.
+   *    `maxReportDelay` is the maximum number of seconds that should pass for `harvest()` to be called.
+   * @dev This may only be called by governance or the strategist.
+   * @param _delay The maximum number of seconds to wait between harvests.
+   */
   function setMaxReportDelay(uint256 _delay) external onlyAuthorized {
     maxReportDelay = _delay;
     emit UpdatedReportDelay(_delay);
   }
 
   /** 
-   * @notice
-   * Harvest the strategy.
-   * This function can be called only by governance, the strategist or the keeper
-   * harvest function is called in order to take in profits, to borrow newly available funds from the vault, or adjust the position
+   * @notice Harvest the strategy.
+   *    This function can be called only by governance, the strategist or the keeper
+   *    harvest function is called in order to take in profits, to borrow newly available funds from the vault, or adjust the position
+   * @dev This may only be called by keeper or governance or strategist.
    */
-
   function harvest() external onlyKeepers {
     _harvest();
   }
 
-  // withdraw assets to the vault
+  /**
+   * @notice Withdraws `_amountNeeded` to `vault`.
+   * @dev This may only be called by the Vault.
+   * @param _amountNeeded How much `want` to withdraw.
+   * @return amountFreed Any gained amount
+   * @return _loss Any realized losses
+   */
   function withdraw(uint256 _amountNeeded) external returns (uint256 amountFreed, uint256 _loss) {
     require(msg.sender == address(vault), "!vault");
     (amountFreed, _loss) = liquidatePosition(_amountNeeded);
@@ -158,7 +207,9 @@ abstract contract BaseStrategy is Initializable {
 
   
   /**
-   * Transfer all assets from current strategy to new strategy
+   * @notice Transfers all `want` from this Strategy to `_newStrategy`.
+   * @dev This may only be called by the Vault or governance.
+   * @param _newStrategy The Strategy to migrate to.
    */
   function migrate(address _newStrategy) external {
     require(msg.sender == address(vault) || msg.sender == governance(), "!vault or !governance");
@@ -168,11 +219,11 @@ abstract contract BaseStrategy is Initializable {
   }
 
   /**
-   * @notice
-   * Activates emergency exit. The strategy will be rovoked and withdraw all funds to the vault.
-   * This may only be called by governance or the strategist.
+   * @notice Activates emergency exit.
+   *  Once activated, the Strategy will exit its position upon the next harvest, depositing all funds
+   *  into the Vault as quickly as is reasonable given on-chain conditions.
+   * @dev This may only be called by governance or the strategist.
    */
-
   function setEmergencyExit() external onlyAuthorized {
     emergencyExit = true;
     vault.revokeStrategy(address(this));
@@ -180,7 +231,14 @@ abstract contract BaseStrategy is Initializable {
     emit EmergencyExitEnabled();
   }
 
-  // Removes tokens from this strategy that are not the type of tokens managed by this strategy
+  /**
+   * @notice Removes tokens from this Strategy that are not the type of tokens managed by this Strategy.
+   *  This may be used in case of accidentally sending the wrong kind of token to this Strategy.
+   *  Tokens will be sent to `governance()`.
+   *  This will fail if an attempt is made to sweep `want`, or any tokens that are protected by this Strategy.
+   * @dev This may only be called by governance.
+   * @param _token The token to transfer out of this vault.
+   */
   function sweep(address _token) external onlyGovernance {
     require(_token != address(want), "!want");
     require(_token != address(vault), "!shares");
@@ -212,6 +270,11 @@ abstract contract BaseStrategy is Initializable {
     return vault.strategies(address(this)).debtRatio > 0 || _estimatedTotalAssets() > 0;
   }
 
+  /**
+   * @notice Provide a signal to the keeper that `harvest()` should be called.
+   * @param callCost The keeper's estimated gas cost to call `harvest()` (in wei).
+   * @return `true` if `harvest()` should be called, `false` otherwise.
+   */
   function harvestTrigger(uint256 callCost) external virtual view returns (bool) {
     StrategyParams memory params = vault.strategies(address(this));
 
