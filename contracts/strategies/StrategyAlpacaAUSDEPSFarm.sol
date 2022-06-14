@@ -14,30 +14,30 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
   using Address for address;
 
   uint256 constant MAX_BPS = 10_000;
-  address constant zap = 0xB15bb89ed07D2949dfee504523a6A12F90117d18;
-  address constant proxyWalletRegistry = 0x13e3Bc3c6A96aE3beaDD1B08531Fde979Dd30aEa;
-  address constant proxyActions = 0x1391FB5efc2394f33930A0CfFb9d407aBdbf1481;
-  address constant positionManager = 0xABA0b03eaA3684EB84b51984add918290B41Ee19;
-  address constant stabilityFeeCollector = 0x45040e48C00b52D9C0bd11b8F577f188991129e6;
-  address constant tokenAdapter = 0x4f56a92cA885bE50E705006876261e839b080E36;
-  address constant stablecoinAdapter = 0xD409DA25D32473EFB0A1714Ab3D0a6763bCe4749;
-  address constant bookKeeper = 0xD0AEcee1520B5F9925D952405F9A06Dcd8fd6e6C;
-  bytes32 constant collateralPoolId = 0x6962425553440000000000000000000000000000000000000000000000000000;
+  address constant ZAP = 0xB15bb89ed07D2949dfee504523a6A12F90117d18;
+  address constant PROXY_WALLET_REGISTRY = 0x13e3Bc3c6A96aE3beaDD1B08531Fde979Dd30aEa;
+  address constant PROXY_ACTIONS = 0x1391FB5efc2394f33930A0CfFb9d407aBdbf1481;
+  address constant POSITION_MANAGER = 0xABA0b03eaA3684EB84b51984add918290B41Ee19;
+  address constant STABILITY_FEE_COLLECTOR = 0x45040e48C00b52D9C0bd11b8F577f188991129e6;
+  address constant TOKEN_ADAPTER = 0x4f56a92cA885bE50E705006876261e839b080E36;
+  address constant STABLECOIN_ADAPTER = 0xD409DA25D32473EFB0A1714Ab3D0a6763bCe4749;
+  address constant BOOK_KEEPER = 0xD0AEcee1520B5F9925D952405F9A06Dcd8fd6e6C;
+  bytes32 constant COLLATERAL_POOL_ID = 0x6962425553440000000000000000000000000000000000000000000000000000;
 
-  address public constant alpacaToken = address(0x8F0528cE5eF7B51152A59745bEfDD91D97091d2F);
-  IAlpacaFarm public constant alpacaFarm = IAlpacaFarm(0xA625AB01B08ce023B2a342Dbb12a16f2C8489A8F);
-  address public constant wbnb = address(0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c);
-  address public constant ausd = address(0xDCEcf0664C33321CECA2effcE701E710A2D28A3F);
-  address public constant ausd3eps = address(0xae70E3f6050d6AB05E03A50c655309C2148615bE);
-  uint256 public constant poolId = 25;        // AUSD-3EPS pool id of alpaca farm contract
-  address public constant pool = 0xa74077EB97778F4E94D79eA60092D0F4831d05A6;    // AUSD-3EPS pool address on Ellipsis
+  address public constant ALPACA_TOKEN = address(0x8F0528cE5eF7B51152A59745bEfDD91D97091d2F);
+  IAlpacaFarm public constant ALPACA_FARM = IAlpacaFarm(0xA625AB01B08ce023B2a342Dbb12a16f2C8489A8F);
+  address public constant WBNB = address(0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c);
+  address public constant AUSD = address(0xDCEcf0664C33321CECA2effcE701E710A2D28A3F);
+  address public constant AUSD3EPS = address(0xae70E3f6050d6AB05E03A50c655309C2148615bE);
+  uint256 public constant POOL_ID = 25;        // AUSD-3EPS pool id of alpaca farm contract
+  address public constant POOL = 0xa74077EB97778F4E94D79eA60092D0F4831d05A6;    // AUSD-3EPS pool address on Ellipsis
   uint256 public collateralFactor;
   IAlpacaVault public ibToken;
   IProxyWallet public proxyWallet;
   address[] public path;              // disposal path for alpaca token on uniswap
 
-  address public constant uniswapRouter = address(0x10ED43C718714eb63d5aA57B78B54704E256024E);
-  address public constant curveRouter = address(0xa74077EB97778F4E94D79eA60092D0F4831d05A6);
+  address public constant UNISWAP_ROUTER = address(0x10ED43C718714eb63d5aA57B78B54704E256024E);
+  address public constant CURVE_ROUTER = address(0xa74077EB97778F4E94D79eA60092D0F4831d05A6);
 
   uint256 public minAlpacaToSell;
   bool public forceMigrate;
@@ -71,17 +71,17 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
     minAlpacaToSell = 1e10;
     collateralFactor = 8750;
 
-    proxyWallet = IProxyWallet(IProxyWalletRegistry(proxyWalletRegistry).build());
+    proxyWallet = IProxyWallet(IProxyWalletRegistry(PROXY_WALLET_REGISTRY).build());
 
     want.safeApprove(address(ibToken), uint256(-1));
-    want.safeApprove(address(curveRouter), uint256(-1));
+    want.safeApprove(address(CURVE_ROUTER), uint256(-1));
     want.safeApprove(address(proxyWallet), uint256(-1));
-    IERC20(alpacaToken).safeApprove(address(uniswapRouter), uint256(-1));
-    IERC20(ausd).safeApprove(address(zap), uint256(-1));
-    IERC20(ausd).safeApprove(address(proxyWallet), uint256(-1));
+    IERC20(ALPACA_TOKEN).safeApprove(address(UNISWAP_ROUTER), uint256(-1));
+    IERC20(AUSD).safeApprove(address(ZAP), uint256(-1));
+    IERC20(AUSD).safeApprove(address(proxyWallet), uint256(-1));
     IERC20(ibToken).safeApprove(address(proxyWallet), uint256(-1));
-    IERC20(ausd3eps).safeApprove(address(zap), uint256(-1));
-    IERC20(ausd3eps).safeApprove(address(alpacaFarm), uint256(-1));
+    IERC20(AUSD3EPS).safeApprove(address(ZAP), uint256(-1));
+    IERC20(AUSD3EPS).safeApprove(address(ALPACA_FARM), uint256(-1));
   }
 
   /**
@@ -146,15 +146,15 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
     // trigger if hadn't been called in a while
     if (block.timestamp.sub(params.lastReport) >= maxReportDelay) return true;
 
-    uint256 wantGasCost = _priceCheck(wbnb, address(want), gasCost);
-    uint256 alpacaGasCost = _priceCheck(wbnb, alpacaToken, gasCost);
+    uint256 wantGasCost = _priceCheck(WBNB, address(want), gasCost);
+    uint256 alpacaGasCost = _priceCheck(WBNB, ALPACA_TOKEN, gasCost);
 
     (, , uint256 claimable) = _getCurrentPosition();
-    uint256 _claimableAlpaca = claimable.add(IERC20(alpacaToken).balanceOf(address(proxyWallet))).add(alpacaFarm.pendingAlpaca(poolId, address(this)));
+    uint256 _claimableAlpaca = claimable.add(IERC20(ALPACA_TOKEN).balanceOf(address(proxyWallet))).add(ALPACA_FARM.pendingAlpaca(POOL_ID, address(this)));
 
     if (_claimableAlpaca > minAlpacaToSell) {
       // trigger harvest if AUTO token balance is worth to do swap
-      if (_claimableAlpaca.add(IERC20(alpacaToken).balanceOf(address(this))) > alpacaGasCost.mul(profitFactor)) {
+      if (_claimableAlpaca.add(IERC20(ALPACA_TOKEN).balanceOf(address(this))) > alpacaGasCost.mul(profitFactor)) {
         return true;
       }
     }
@@ -187,19 +187,19 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
   function _estimatedTotalAssets() internal override view returns (uint256 _assets) {
     (uint256 collateral, uint256 debt, uint256 claimable) = _getCurrentPosition();
     
-    // add up ALPACA rewards from alpaca staking vault and ausd lending protocol
+    // add up ALPACA rewards from alpaca staking vault and AUSD lending protocol
     // ALPACA reward of AUSD lending protocol is distributed in two places, one is proxyWallet and the other is pending on contract
-    uint256 claimableAlpaca = claimable.add(IERC20(alpacaToken).balanceOf(address(proxyWallet))).add(alpacaFarm.pendingAlpaca(poolId, address(this)));
-    uint256 currentAlpaca = IERC20(alpacaToken).balanceOf(address(this));
-    uint256 claimableValue = _priceCheck(alpacaToken, address(want), claimableAlpaca.add(currentAlpaca));
+    uint256 claimableAlpaca = claimable.add(IERC20(ALPACA_TOKEN).balanceOf(address(proxyWallet))).add(ALPACA_FARM.pendingAlpaca(POOL_ID, address(this)));
+    uint256 currentAlpaca = IERC20(ALPACA_TOKEN).balanceOf(address(this));
+    uint256 claimableValue = _priceCheck(ALPACA_TOKEN, address(want), claimableAlpaca.add(currentAlpaca));
     claimableValue = claimableValue.mul(9).div(10);      // remaining 10% will be used for compensate offset
 
     // `lpValue` is AUSD amount. get AUSD amount equal to staked liquidity lp.
-    (uint256 stakedBalance, , , ) = alpacaFarm.userInfo(poolId, address(this));
-    uint256 lpValue = IZap(zap).calc_withdraw_one_coin(pool, stakedBalance, 0);
+    (uint256 stakedBalance, , , ) = ALPACA_FARM.userInfo(POOL_ID, address(this));
+    uint256 lpValue = IZap(ZAP).calc_withdraw_one_coin(POOL, stakedBalance, 0);
 
     if (lpValue > debt) {
-      uint256 est = IStableSwap(curveRouter).get_dy_underlying(0, 1, lpValue.sub(debt));
+      uint256 est = IStableSwap(CURVE_ROUTER).get_dy_underlying(0, 1, lpValue.sub(debt));
       _assets = collateral.add(claimableValue).add(est);
     } else {
       uint256 est = debt.sub(lpValue);
@@ -213,13 +213,13 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
 
   // get the position for alpaca AUSD lending protocol
   function _getCurrentPosition() internal view returns (uint256 lockedCollateralValue, uint256 debt, uint256 claimable) {
-    uint256 positionId = IPositionManager(positionManager).ownerFirstPositionId(address(proxyWallet));
-    address positionHandler = IPositionManager(positionManager).positions(positionId);
-    (uint256 lockedCollateral, uint256 debtShare) = IBookKeeper(bookKeeper).positions(collateralPoolId, positionHandler);
+    uint256 positionId = IPositionManager(POSITION_MANAGER).ownerFirstPositionId(address(proxyWallet));
+    address positionHandler = IPositionManager(POSITION_MANAGER).positions(positionId);
+    (uint256 lockedCollateral, uint256 debtShare) = IBookKeeper(BOOK_KEEPER).positions(COLLATERAL_POOL_ID, positionHandler);
     lockedCollateralValue = lockedCollateral.mul(ibToken.totalToken()).div(ibToken.totalSupply());
-    uint256 _debtAccumulatedRate = ICollateralPoolConfig(IBookKeeper(bookKeeper).collateralPoolConfig()).getDebtAccumulatedRate(collateralPoolId);
+    uint256 _debtAccumulatedRate = ICollateralPoolConfig(IBookKeeper(BOOK_KEEPER).collateralPoolConfig()).getDebtAccumulatedRate(COLLATERAL_POOL_ID);
     debt = debtShare.mul(_debtAccumulatedRate).div(1e27);
-    claimable = IIbTokenAdapter(tokenAdapter).netPendingRewards(positionHandler);
+    claimable = IIbTokenAdapter(TOKEN_ADAPTER).netPendingRewards(positionHandler);
   }
 
   function prepareReturn(uint256 _debtOutstanding) internal override returns (
@@ -238,16 +238,16 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
     _claimAlpaca();
     _disposeAlpaca();
 
-    (uint256 stakedBalance, , , ) = alpacaFarm.userInfo(poolId, address(this));
-    uint256 lpValue = IZap(zap).calc_withdraw_one_coin(pool, stakedBalance, 0);
-    // if AUSD amount that staked in ausd3eps liquidity is over AUSD debt on AUSD lending protocol, adjust them to keep the same amount. vice versa
+    (uint256 stakedBalance, , , ) = ALPACA_FARM.userInfo(POOL_ID, address(this));
+    uint256 lpValue = IZap(ZAP).calc_withdraw_one_coin(POOL, stakedBalance, 0);
+    // if AUSD amount that staked in AUSD3EPS liquidity is over AUSD debt on AUSD lending protocol, adjust them to keep the same amount. vice versa
     uint256 addedLpValue;
     if (debt > lpValue) {
       addedLpValue = _mintAndStakeAusd(debt.sub(lpValue), true);
     } else if (debt < lpValue && lpValue.sub(debt) > minAlpacaToSell) {
-      uint256 lpToWithdraw = IZap(zap).calc_token_amount(pool, [lpValue.sub(debt), 0, 0, 0], true);
-      alpacaFarm.withdraw(address(this), poolId, lpToWithdraw);
-      IZap(zap).remove_liquidity_one_coin(pool, lpToWithdraw, 1, 0);
+      uint256 lpToWithdraw = IZap(ZAP).calc_token_amount(POOL, [lpValue.sub(debt), 0, 0, 0], true);
+      ALPACA_FARM.withdraw(address(this), POOL_ID, lpToWithdraw);
+      IZap(ZAP).remove_liquidity_one_coin(POOL, lpToWithdraw, 1, 0);
     }
 
     uint256 wantBalance = want.balanceOf(address(this));
@@ -311,7 +311,7 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
     _farm(_wantBal - _debtOutstanding);
   }
 
-  // adjust position by keeping collateral ratio and stake new AUSD assets to ausd3eps liquidity
+  // adjust position by keeping collateral ratio and stake new AUSD assets to AUSD3EPS liquidity
   function _farm(uint256 amount) internal {
     if (amount == 0) return;
 
@@ -322,10 +322,10 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
     uint256 borrow = desiredDebt.sub(debt);
     convertLockTokenAndDraw(amount, borrow, true);
     
-    uint256 depositAmount = IERC20(ausd).balanceOf(address(this));
-    IZap(zap).add_liquidity(pool, [depositAmount, 0, 0, 0], 0);
+    uint256 depositAmount = IERC20(AUSD).balanceOf(address(this));
+    IZap(ZAP).add_liquidity(POOL, [depositAmount, 0, 0, 0], 0);
     
-    alpacaFarm.deposit(address(this), poolId, IERC20(ausd3eps).balanceOf(address(this)));
+    ALPACA_FARM.deposit(address(this), POOL_ID, IERC20(AUSD3EPS).balanceOf(address(this)));
   }
 
   // withdraw `_amount` of want from alpaca AUSD lending protocol
@@ -338,10 +338,10 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
     uint256 desiredDebt = desiredCollateralValue.mul(collateralFactor).div(MAX_BPS);
     if (desiredDebt <= 500e18) {
     // alpaca doesn't allow the AUSD debt size to be lower than 500e18, so in that case, should close position completely
-      (uint256 stakedLp, , , ) = alpacaFarm.userInfo(poolId, address(this));
-      alpacaFarm.withdraw(address(this), poolId, stakedLp);
-      IZap(zap).remove_liquidity_one_coin(pool, stakedLp, 0, 0);
-      uint256 ausdBal = IERC20(ausd).balanceOf(address(this));
+      (uint256 stakedLp, , , ) = ALPACA_FARM.userInfo(POOL_ID, address(this));
+      ALPACA_FARM.withdraw(address(this), POOL_ID, stakedLp);
+      IZap(ZAP).remove_liquidity_one_coin(POOL, stakedLp, 0, 0);
+      uint256 ausdBal = IERC20(AUSD).balanceOf(address(this));
       if (ausdBal < debt) {
         _claimAlpaca();
         _disposeAlpaca();
@@ -352,33 +352,33 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
     // if not lower than 500e18, adjust position normally
       uint256 repay = debt.sub(desiredDebt);
 
-      uint256 lpToWithdraw = IZap(zap).calc_token_amount(pool, [repay, 0, 0, 0], true);
-      (uint256 stakedLp, , , ) = alpacaFarm.userInfo(poolId, address(this));
+      uint256 lpToWithdraw = IZap(ZAP).calc_token_amount(POOL, [repay, 0, 0, 0], true);
+      (uint256 stakedLp, , , ) = ALPACA_FARM.userInfo(POOL_ID, address(this));
       if (lpToWithdraw > stakedLp) {
         lpToWithdraw = stakedLp;
       }
       
-      alpacaFarm.withdraw(address(this), poolId, lpToWithdraw);
-      IZap(zap).remove_liquidity_one_coin(pool, lpToWithdraw, 0, 0);
-      convertLockTokenAndDraw(_amount.mul(ibToken.totalSupply()).div(ibToken.totalToken()), _min(IERC20(ausd).balanceOf(address(this)), repay), false);
+      ALPACA_FARM.withdraw(address(this), POOL_ID, lpToWithdraw);
+      IZap(ZAP).remove_liquidity_one_coin(POOL, lpToWithdraw, 0, 0);
+      convertLockTokenAndDraw(_amount.mul(ibToken.totalSupply()).div(ibToken.totalToken()), _min(IERC20(AUSD).balanceOf(address(this)), repay), false);
     }
   }
 
 
   // Alpaca AUSD lending protocol position adjust functions. lends `amount` of want and borrow `stablecoinAmount` of AUSD or vice versa
   function convertLockTokenAndDraw(uint256 amount, uint256 stablecoinAmount, bool flag) internal {
-    uint256 positionId = IPositionManager(positionManager).ownerFirstPositionId(address(proxyWallet));
+    uint256 positionId = IPositionManager(POSITION_MANAGER).ownerFirstPositionId(address(proxyWallet));
     bytes memory _data;
     if (flag) {
       if (positionId == 0) {
         _data = abi.encodeWithSignature(
           "convertOpenLockTokenAndDraw(address,address,address,address,address,bytes32,uint256,uint256,bytes)", 
           ibToken, 
-          positionManager,
-          stabilityFeeCollector,
-          tokenAdapter,
-          stablecoinAdapter,
-          collateralPoolId,
+          POSITION_MANAGER,
+          STABILITY_FEE_COLLECTOR,
+          TOKEN_ADAPTER,
+          STABLECOIN_ADAPTER,
+          COLLATERAL_POOL_ID,
           amount,
           stablecoinAmount,
           abi.encode(address(this))
@@ -387,10 +387,10 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
         _data = abi.encodeWithSignature(
           "convertLockTokenAndDraw(address,address,address,address,address,uint256,uint256,uint256,bytes)",
           ibToken,
-          positionManager,
-          stabilityFeeCollector,
-          tokenAdapter,
-          stablecoinAdapter,
+          POSITION_MANAGER,
+          STABILITY_FEE_COLLECTOR,
+          TOKEN_ADAPTER,
+          STABLECOIN_ADAPTER,
           positionId,
           amount,
           stablecoinAmount,
@@ -403,9 +403,9 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
         _data = abi.encodeWithSignature(
           "wipeAllUnlockTokenAndConvert(address,address,address,address,uint256,uint256,bytes)", 
           ibToken, 
-          positionManager,
-          tokenAdapter,
-          stablecoinAdapter,
+          POSITION_MANAGER,
+          TOKEN_ADAPTER,
+          STABLECOIN_ADAPTER,
           positionId,
           amount,
           abi.encode(address(this))
@@ -414,9 +414,9 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
         _data = abi.encodeWithSignature(
           "wipeUnlockTokenAndConvert(address,address,address,address,uint256,uint256,uint256,bytes)",
           ibToken,
-          positionManager,
-          tokenAdapter,
-          stablecoinAdapter,
+          POSITION_MANAGER,
+          TOKEN_ADAPTER,
+          STABLECOIN_ADAPTER,
           positionId,
           amount,
           stablecoinAmount,
@@ -425,10 +425,10 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
       }
     }
     
-    proxyWallet.execute(proxyActions, _data);
+    proxyWallet.execute(PROXY_ACTIONS, _data);
   }
 
-  // swap want balance to AUSD to match debt. if `flag` is true, stake AUSD to ausd3eps liquidity
+  // swap want balance to AUSD to match debt. if `flag` is true, stake AUSD to AUSD3EPS liquidity
   function _mintAndStakeAusd(uint256 amount, bool flag) internal returns (uint256) {
     uint256 wantBal = IERC20(want).balanceOf(address(this));
     amount = _min(wantBal, amount);
@@ -436,12 +436,12 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
       return 0;
     }
     
-    IStableSwap(curveRouter).exchange_underlying(1, 0, amount, 0);
+    IStableSwap(CURVE_ROUTER).exchange_underlying(1, 0, amount, 0);
 
-    uint256 depositAmount = IERC20(ausd).balanceOf(address(this));
+    uint256 depositAmount = IERC20(AUSD).balanceOf(address(this));
     if (flag) {
-      IZap(zap).add_liquidity(pool, [depositAmount, 0, 0, 0], 0);
-      alpacaFarm.deposit(address(this), poolId, IERC20(ausd3eps).balanceOf(address(this)));
+      IZap(ZAP).add_liquidity(POOL, [depositAmount, 0, 0, 0], 0);
+      ALPACA_FARM.deposit(address(this), POOL_ID, IERC20(AUSD3EPS).balanceOf(address(this)));
     }
 
     return depositAmount;
@@ -449,34 +449,34 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
 
   // claims Alpaca reward token
   function _claimAlpaca() internal {
-    alpacaFarm.harvest(poolId);
+    ALPACA_FARM.harvest(POOL_ID);
 
-    uint256 positionId = IPositionManager(positionManager).ownerFirstPositionId(address(proxyWallet));
+    uint256 positionId = IPositionManager(POSITION_MANAGER).ownerFirstPositionId(address(proxyWallet));
     address[] memory _tokenAdapters = new address[](1);
     uint256[] memory _positionIds = new uint256[](1);
-    _tokenAdapters[0] = tokenAdapter;
+    _tokenAdapters[0] = TOKEN_ADAPTER;
     _positionIds[0] = positionId;
     bytes memory _data = abi.encodeWithSignature(
       "harvestMultiple(address,address[],uint256[],address)",
-      positionManager,
+      POSITION_MANAGER,
       _tokenAdapters,
       _positionIds,
-      alpacaToken
+      ALPACA_TOKEN
     );
-    proxyWallet.execute(proxyActions, _data);
+    proxyWallet.execute(PROXY_ACTIONS, _data);
   }
 
   // sell harvested Alpaca token
   function _disposeAlpaca() internal {
-    uint256 _alpaca = IERC20(alpacaToken).balanceOf(address(this));
+    uint256 _alpaca = IERC20(ALPACA_TOKEN).balanceOf(address(this));
 
     if (_alpaca > minAlpacaToSell) {
 
-      uint256[] memory amounts = IUniswapV2Router02(uniswapRouter).getAmountsOut(_alpaca, path);
+      uint256[] memory amounts = IUniswapV2Router02(UNISWAP_ROUTER).getAmountsOut(_alpaca, path);
       uint256 estimatedWant = amounts[amounts.length - 1];
       uint256 conservativeWant = estimatedWant.mul(9).div(10);      // remaining 10% will be used for compensate offset
 
-      IUniswapV2Router02(uniswapRouter).swapExactTokensForTokens(_alpaca, conservativeWant, path, address(this), now);
+      IUniswapV2Router02(UNISWAP_ROUTER).swapExactTokensForTokens(_alpaca, conservativeWant, path, address(this), now);
     }
   }
 
@@ -506,12 +506,12 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
    */
   function prepareMigration(address _newStrategy) internal override {
     if (!forceMigrate) {
-      alpacaFarm.withdrawAll(address(this), poolId);
-      IZap(zap).remove_liquidity_one_coin(pool, IERC20(ausd3eps).balanceOf(address(this)), 0, 0);
+      ALPACA_FARM.withdrawAll(address(this), POOL_ID);
+      IZap(ZAP).remove_liquidity_one_coin(POOL, IERC20(AUSD3EPS).balanceOf(address(this)), 0, 0);
       
-      uint256 _alpacaBalance = IERC20(alpacaToken).balanceOf(address(this));
+      uint256 _alpacaBalance = IERC20(ALPACA_TOKEN).balanceOf(address(this));
       if (_alpacaBalance > 0) {
-        IERC20(alpacaToken).safeTransfer(_newStrategy, _alpacaBalance);
+        IERC20(ALPACA_TOKEN).safeTransfer(_newStrategy, _alpacaBalance);
       }
     }
   }
@@ -523,23 +523,23 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
     }
 
     address[] memory _path;
-    if (start == wbnb) {
+    if (start == WBNB) {
       _path = new address[](2);
-      _path[0] = wbnb;
+      _path[0] = WBNB;
       _path[1] = end;
     } else {
       _path = new address[](3);
       _path[0] = start;
-      _path[1] = wbnb;
+      _path[1] = WBNB;
       _path[2] = end;
     }
 
-    uint256[] memory amounts = IUniswapV2Router02(uniswapRouter).getAmountsOut(_amount, _path);
+    uint256[] memory amounts = IUniswapV2Router02(UNISWAP_ROUTER).getAmountsOut(_amount, _path);
     return amounts[amounts.length - 1];
   }
 
   function setProtectedTokens() internal override {
-    protected[alpacaToken] = true;
+    protected[ALPACA_TOKEN] = true;
   }
 
   function _min(uint256 a, uint256 b) internal pure returns (uint256) {
