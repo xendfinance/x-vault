@@ -348,7 +348,7 @@ contract StrategyAlpacaAUSDEPSFarm is BaseStrategy {
         _mintAndStakeAusd(debt.sub(ausdBal), false);
       }
       convertLockTokenAndDraw(collateral.mul(ibToken.totalSupply()).div(ibToken.totalToken()).add(1), uint256(-1), false);
-    } else {
+    } else if (debt > desiredDebt) {
     // if not lower than 500e18, adjust position normally
       uint256 repay = debt.sub(desiredDebt);
 
