@@ -10,3 +10,4 @@
 .env
 run-ganache.sh
 /flattens
+.vscode

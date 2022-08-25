@@ -54,7 +54,8 @@ contract EmergencyStrategy is BaseStrategy {
   ) {
     _profit = 0;
     _loss = 0;
-    _debtPayment = 0;
+    uint256 wantBalance = want.balanceOf(address(this));
+    _debtPayment = _min(wantBalance, _debtOutstanding);
   }
 
   function adjustPosition(uint256 _debtOutstanding) internal override {
@@ -99,6 +100,10 @@ contract EmergencyStrategy is BaseStrategy {
   function withdrawToRepay(uint256 amount) external {
     require(allowed[msg.sender] == true, "only allowed caller can withdraw");
     want.safeTransfer(msg.sender, amount);
+  }
+
+  function _min(uint256 a, uint256 b) internal pure returns (uint256) {
+    return a < b ? a : b;
   }
 
 }

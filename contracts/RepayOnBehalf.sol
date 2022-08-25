@@ -27,7 +27,7 @@ contract RepayOnBehalf is Ownable, IERC3156FlashBorrower {
   using SafeERC20 for IERC20;
   
   IStrategy strategy;
-  address public crWant = address(0xEF6d459FE81C3Ed53d292c936b2df5a8084975De);
+  address public crWant = address(0xD83C88DB3A6cA4a32FFf1603b0f7DDce01F5f727);
   address public want;
   VBep20I public vToken;
   address public vault;
@@ -54,22 +54,20 @@ contract RepayOnBehalf is Ownable, IERC3156FlashBorrower {
     uint256 amount = amountDesired;
     bytes memory data = abi.encode(deficit, amount);
 
-    ICTokenFlashloan(crWant).flashLoan(address(this), address(this), amount, data);
+    ICTokenFlashloan(crWant).flashLoan(address(this), address(want), amount, data);
 
     return amount;
     
   }
 
-  function onFlashLoan(address sender, address underlying, uint amount, uint fee, bytes calldata params) override external returns (bytes32) {
-    // uint currentBalance = IERC20(underlying).balanceOf(address(this));
-    require(sender == address(this), "caller is not this contract");
+  function onFlashLoan(address initiator, address token, uint256 amount, uint256 fee, bytes calldata params) override external returns (bytes32) {
+    require(initiator == address(this), "caller is not this contract");
     require(msg.sender == crWant, "Not Flash Loan Provider");
     (, uint256 borrowAmount) = abi.decode(params, (bool, uint256));
-    require(IERC20(want).balanceOf(address(this)) == borrowAmount, "insuffient amount");
+    require(amount == borrowAmount, "insuffient amount");
 
     repayOnBehalf(amount + fee);
-    // IERC20(underlying).safeTransfer(crWant, amount + fee);
-    IERC20(want).approve(msg.sender, amount + fee);
+    IERC20(token).approve(msg.sender, amount + fee);
     return keccak256("ERC3156FlashBorrowerInterface.onFlashLoan");
     
   }
