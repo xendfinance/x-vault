@@ -235,18 +235,19 @@ contract StrategyUgoHawkVenusUSDCFarm is BaseStrategy, ERC3156FlashBorrowerInter
       return 0;
     }
 
-    uint256 distributionPerBlock = venus.venusSpeeds(address(vToken));
+    uint256 supplySpeed = venus.venusSupplySpeeds(address(vToken));
+    uint256 borrowSpeed = venus.venusBorrowSpeeds(address(vToken));
     uint256 totalBorrow = vToken.totalBorrows();
     uint256 totalSupplyVToken = vToken.totalSupply();
     uint256 totalSupply = totalSupplyVToken.mul(vToken.exchangeRateStored()).div(1e18);
 
     uint256 blockShareSupply = 0;
     if (totalSupply > 0) {
-      blockShareSupply = deposits.mul(distributionPerBlock).div(totalSupply);
+      blockShareSupply = deposits.mul(supplySpeed).div(totalSupply);
     }
     uint256 blockShareBorrow = 0;
     if (totalBorrow > 0) {
-      blockShareBorrow = borrows.mul(distributionPerBlock).div(totalBorrow);
+      blockShareBorrow = borrows.mul(borrowSpeed).div(totalBorrow);
     }
 
     uint256 blockShare = blockShareSupply.add(blockShareBorrow);
