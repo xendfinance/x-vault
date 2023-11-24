@@ -79,5 +79,6 @@ interface UnitrollerI {
 
   function markets(address vToken) external view returns (bool, uint256, bool);
 
-  function venusSpeeds(address vtoken) external view returns (uint256);
+  function venusSupplySpeeds(address) external view returns (uint);
+  function venusBorrowSpeeds(address) external view returns (uint);
 }
